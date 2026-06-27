@@ -63,6 +63,14 @@ export type GameInfo = {
   totalTimeMs: number; // foreground time over the last ~7 days
 };
 
+export type VersionInfo = {
+  versionCode: number;
+  versionName: string;
+};
+
+/** Result of installUpdate: download started, or user sent to grant install perm. */
+export type InstallResult = 'INSTALLING' | 'NEEDS_PERMISSION';
+
 type NativeShape = {
   getPermissionStatus(): Promise<PermissionStatus>;
   openPermissionSettings(which: PermissionKey | 'appDetails'): void;
@@ -84,6 +92,8 @@ type NativeShape = {
   listGames(): Promise<GameInfo[]>;
   launchApp(packageName: string): Promise<boolean>;
   getAppIcon(packageName: string): Promise<string | null>;
+  getVersionInfo(): Promise<VersionInfo>;
+  installUpdate(url: string): Promise<InstallResult>;
 };
 
 const native: NativeShape | undefined =
@@ -215,6 +225,16 @@ export const CantosHub = {
   async getAppIcon(packageName: string): Promise<string | null> {
     if (!native) return null;
     return native.getAppIcon(packageName);
+  },
+
+  async getVersionInfo(): Promise<VersionInfo> {
+    if (!native) return { versionCode: 0, versionName: 'dev' };
+    return native.getVersionInfo();
+  },
+
+  async installUpdate(url: string): Promise<InstallResult> {
+    if (!native) return 'INSTALLING';
+    return native.installUpdate(url);
   },
 };
 

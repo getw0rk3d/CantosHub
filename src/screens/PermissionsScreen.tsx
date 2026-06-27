@@ -3,10 +3,10 @@
  * Every capability maps to a single Android special-access permission the user
  * toggles in system Settings. Nothing here needs root.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Badge, PrimaryButton, SectionCard, StatusDot } from '../components/ui';
-import { CantosHub, PermissionKey } from '../native/CantosHub';
+import { CantosHub, PermissionKey, VersionInfo } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
 
@@ -47,11 +47,14 @@ export default function PermissionsScreen() {
   const store = useStore();
   const { permissions } = store;
 
-  const { shizuku } = store;
+  const { shizuku, update } = store;
+  const [version, setVersion] = useState<VersionInfo | null>(null);
 
   useEffect(() => {
     store.refreshPermissions();
     store.refreshShizuku();
+    store.checkForUpdate();
+    CantosHub.getVersionInfo().then(setVersion);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -132,6 +135,40 @@ export default function PermissionsScreen() {
                 onPress={() => store.refreshShizuku()}
               />
             </View>
+          </View>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Updates"
+        right={
+          update ? (
+            <Badge
+              text={update.available ? 'UPDATE READY' : 'UP TO DATE'}
+              color={update.available ? colors.accent : colors.textDim}
+            />
+          ) : undefined
+        }>
+        <Text style={styles.note}>
+          Installed: v{version?.versionName ?? '—'} (build {version?.versionCode ?? '—'})
+        </Text>
+        {update?.available ? (
+          <View style={{ marginTop: spacing.md }}>
+            {!!update.notes && (
+              <Text style={[styles.note, { marginBottom: spacing.sm }]}>{update.notes}</Text>
+            )}
+            <PrimaryButton
+              title={`Install v${update.versionName}`}
+              onPress={() => store.installUpdate()}
+            />
+          </View>
+        ) : (
+          <View style={{ marginTop: spacing.md }}>
+            <PrimaryButton
+              title="Check for updates"
+              variant="outline"
+              onPress={() => store.checkForUpdate()}
+            />
           </View>
         )}
       </SectionCard>

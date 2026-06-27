@@ -18,6 +18,7 @@ import android.os.PowerManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Foreground service that holds a boost active — the legitimate, owner-visible
@@ -56,6 +57,12 @@ class BoostService : Service() {
   private var profiles: List<JSONObject> = emptyList()
   private var appliedPackage: String? = null
   private var appliedProfileName: String = ""
+
+  // FPS sampling (Shizuku only): average rendered FPS from gfxinfo frame deltas.
+  private var lastFrames = -1
+  private var lastFramesAt = 0L
+  private var lastFpsPkg: String? = null
+  private var currentFps = -1
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -110,7 +117,10 @@ class BoostService : Service() {
       if (!isRunning) return
       try {
         if (auto) handleAuto()
-        if (showOverlay) overlay?.update(buildHudText())
+        if (showOverlay) {
+          if (ShizukuManager.hasPermission()) sampleFps()
+          overlay?.update(buildHudText())
+        }
       } catch (e: Exception) {
       }
       workHandler?.postDelayed(this, POLL_MS)
@@ -209,11 +219,39 @@ class BoostService : Service() {
       appliedProfileName.isNotEmpty() -> appliedProfileName
       else -> "watching"
     }
-    return String.format(
+    val base = String.format(
       Locale.US,
       "⚡ %s  •  %s  •  %d%%  •  %.1f/%.1fG",
       tag, therm, batt, usedG, totG,
     )
+    return if (currentFps >= 0) "$base  •  $currentFps fps" else base
+  }
+
+  /** Average rendered FPS via Shizuku `dumpsys gfxinfo` total-frame deltas. */
+  private fun sampleFps() {
+    val pkg = currentForegroundApp() ?: return
+    ShizukuManager.exec(this, listOf("dumpsys", "gfxinfo", pkg)) { out ->
+      val frames = parseTotalFrames(out)
+      val now = System.currentTimeMillis()
+      if (frames >= 0) {
+        if (pkg == lastFpsPkg && lastFrames in 0..frames && lastFramesAt > 0L) {
+          val dt = (now - lastFramesAt) / 1000.0
+          if (dt > 0.3) currentFps = ((frames - lastFrames) / dt).roundToInt()
+        } else {
+          currentFps = -1
+        }
+        lastFrames = frames
+        lastFramesAt = now
+        lastFpsPkg = pkg
+      }
+      if (showOverlay) overlay?.update(buildHudText())
+    }
+  }
+
+  private fun parseTotalFrames(out: String?): Int {
+    if (out == null) return -1
+    val m = Regex("Total frames rendered:\\s*(\\d+)").find(out) ?: return -1
+    return m.groupValues[1].toIntOrNull() ?: -1
   }
 
   private fun thermalShort(status: Int): String = when (status) {

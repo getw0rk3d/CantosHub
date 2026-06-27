@@ -24,6 +24,15 @@ import {
 } from '../native/CantosHub';
 
 const STORAGE_KEY = 'cantoshub_state_v1';
+const VERSIONS_URL =
+  'https://raw.githubusercontent.com/getw0rk3d/CantosHub/main/versions.json';
+
+export type UpdateState = {
+  available: boolean;
+  versionName?: string;
+  apkUrl?: string;
+  notes?: string;
+};
 
 export type ToggleKey = 'dnd' | 'peakRefreshRate' | 'keepAwake' | 'maxBrightness';
 
@@ -83,6 +92,10 @@ type Store = {
   showOverlay: boolean;
   setShowOverlay: (v: boolean) => void;
 
+  update: UpdateState | null;
+  checkForUpdate: () => Promise<void>;
+  installUpdate: () => Promise<void>;
+
   boostRunning: boolean;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
@@ -99,6 +112,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [shizuku, setShizuku] = useState<ShizukuStatus | null>(null);
   const [autoMode, setAutoMode] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
+  const [update, setUpdate] = useState<UpdateState | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -116,6 +130,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   autoRef.current = autoMode;
   const overlayRef = useRef(showOverlay);
   overlayRef.current = showOverlay;
+  const updateRef = useRef(update);
+  updateRef.current = update;
 
   const refreshPermissions = useCallback(async () => {
     try {
@@ -140,6 +156,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       await refreshShizuku();
     }
   }, [refreshShizuku]);
+
+  const checkForUpdate = useCallback(async () => {
+    try {
+      const info = await CantosHub.getVersionInfo();
+      const res = await fetch(`${VERSIONS_URL}?t=${Date.now()}`);
+      const remote = await res.json();
+      if (typeof remote.versionCode === 'number' && remote.versionCode > info.versionCode) {
+        setUpdate({
+          available: true,
+          versionName: remote.versionName,
+          apkUrl: remote.apkUrl,
+          notes: remote.notes,
+        });
+      } else {
+        setUpdate({ available: false });
+      }
+    } catch {
+      setUpdate(prev => prev ?? { available: false });
+    }
+  }, []);
+
+  const installUpdate = useCallback(async () => {
+    const u = updateRef.current;
+    if (u?.apkUrl) await CantosHub.installUpdate(u.apkUrl);
+  }, []);
 
   const updateProfile = useCallback(
     (id: string, patch: Partial<BoostProfile>) => {
@@ -257,7 +298,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     CantosHub.reconcile().catch(() => {});
     refreshPermissions();
     refreshShizuku();
-  }, [refreshPermissions, refreshShizuku]);
+    checkForUpdate();
+  }, [refreshPermissions, refreshShizuku, checkForUpdate]);
 
   // Hydrate persisted profiles + settings once.
   useEffect(() => {
@@ -319,6 +361,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setAutoMode,
     showOverlay,
     setShowOverlay,
+    update,
+    checkForUpdate,
+    installUpdate,
     boostRunning,
     startBoost,
     stopBoost,

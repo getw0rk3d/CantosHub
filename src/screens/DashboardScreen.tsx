@@ -1,6 +1,7 @@
 /** Main boost dashboard: master switch, quick toggles, live telemetry. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  DeviceEventEmitter,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -36,7 +37,25 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [dlProgress, setDlProgress] = useState(0);
   const mounted = useRef(true);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('CantosHubUpdateProgress', (pct: number) =>
+      setDlProgress(pct),
+    );
+    return () => sub.remove();
+  }, []);
+
+  const onInstall = useCallback(async () => {
+    setInstalling(true);
+    try {
+      await store.installUpdate();
+    } catch {
+      setInstalling(false);
+    }
+  }, [store]);
 
   const loadTelemetry = useCallback(async () => {
     const t = await CantosHub.getTelemetry();
@@ -97,6 +116,20 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
           color={boostRunning ? colors.accent : colors.textDim}
         />
       </View>
+
+      {store.update?.available && (
+        <Pressable style={styles.update} onPress={onInstall} disabled={installing}>
+          <Text style={styles.updateTitle}>
+            {installing
+              ? `Downloading update… ${dlProgress}%`
+              : `Update available — v${store.update.versionName}`}
+          </Text>
+          {!installing && !!store.update.notes && (
+            <Text style={styles.updateNotes}>{store.update.notes}</Text>
+          )}
+          {!installing && <Text style={styles.updateCta}>Tap to install</Text>}
+        </Pressable>
+      )}
 
       {!CantosHub.isNativeAvailable && (
         <View style={styles.notice}>
@@ -242,6 +275,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   noticeText: { color: colors.warn, fontSize: 12 },
+  update: {
+    backgroundColor: 'rgba(0,229,160,0.10)',
+    borderColor: colors.accent,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  updateTitle: { color: colors.accent, fontSize: 14, fontWeight: '800' },
+  updateNotes: { color: colors.textDim, fontSize: 12, marginTop: 4 },
+  updateCta: { color: colors.accent2, fontSize: 12, fontWeight: '700', marginTop: 6 },
   master: {
     borderRadius: 18,
     borderWidth: 2,

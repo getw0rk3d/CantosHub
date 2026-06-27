@@ -385,6 +385,108 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  // --- In-app updater ---
+  @ReactMethod
+  fun getVersionInfo(promise: Promise) {
+    try {
+      val pInfo = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+      val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        pInfo.longVersionCode.toInt()
+      } else {
+        @Suppress("DEPRECATION")
+        pInfo.versionCode
+      }
+      val m = Arguments.createMap()
+      m.putInt("versionCode", code)
+      m.putString("versionName", pInfo.versionName ?: "")
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.reject("VERSION_ERR", e)
+    }
+  }
+
+  /** Downloads the APK (emitting progress) and launches the system installer. */
+  @ReactMethod
+  fun installUpdate(url: String, promise: Promise) {
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        !ctx.packageManager.canRequestPackageInstalls()
+      ) {
+        val i = Intent(
+          Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+          Uri.parse("package:${ctx.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(i)
+        promise.resolve("NEEDS_PERMISSION")
+        return
+      }
+      Thread {
+        try {
+          val file = downloadApk(url)
+          launchInstall(file)
+          promise.resolve("INSTALLING")
+        } catch (e: Exception) {
+          promise.reject("UPDATE_DOWNLOAD_ERR", e)
+        }
+      }.start()
+    } catch (e: Exception) {
+      promise.reject("UPDATE_ERR", e)
+    }
+  }
+
+  private fun downloadApk(url: String): java.io.File {
+    val file = java.io.File(ctx.getExternalFilesDir(null), "update.apk")
+    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.instanceFollowRedirects = true
+    conn.connectTimeout = 30000
+    conn.readTimeout = 30000
+    conn.connect()
+    val total = conn.contentLength
+    conn.inputStream.use { input ->
+      java.io.FileOutputStream(file).use { output ->
+        val buf = ByteArray(8192)
+        var read: Int
+        var sum = 0L
+        var lastPct = -1
+        while (input.read(buf).also { read = it } != -1) {
+          output.write(buf, 0, read)
+          sum += read
+          if (total > 0) {
+            val pct = (sum * 100 / total).toInt()
+            if (pct != lastPct) {
+              lastPct = pct
+              emitProgress(pct)
+            }
+          }
+        }
+      }
+    }
+    conn.disconnect()
+    return file
+  }
+
+  private fun launchInstall(file: java.io.File) {
+    val uri = androidx.core.content.FileProvider.getUriForFile(
+      ctx,
+      "${ctx.packageName}.fileprovider",
+      file,
+    )
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    ctx.startActivity(intent)
+  }
+
+  private fun emitProgress(pct: Int) {
+    try {
+      ctx.getJSModule(
+        com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java,
+      ).emit("CantosHubUpdateProgress", pct)
+    } catch (e: Exception) {
+    }
+  }
+
   private fun weeklyUsage(): Map<String, Long> {
     return try {
       val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager

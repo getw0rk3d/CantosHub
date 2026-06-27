@@ -1,97 +1,82 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# CantosHub 🎮⚡
 
-# Getting Started
+A standalone, **100% no-root** game-boost hub for Android. CantosHub never uses
+`su`. Instead, the *owner* grants ordinary Android special-access permissions, and
+a foreground service uses them to apply a "boost" while you game — then restores
+everything when you stop.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+> This is a separate app from CantosTV / the TV app — its own repo, its own
+> package (`com.cantoshub`), its own release cadence.
 
-## Step 1: Start Metro
+## What it does (Phase 0)
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+A boost is just a bundle of toggles the system actually honours:
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+| Toggle | Mechanism | Permission used |
+|---|---|---|
+| **Do Not Disturb** | `NotificationManager.setInterruptionFilter` | DND access |
+| **Peak refresh rate** | `peak_refresh_rate` / `min_refresh_rate` settings (best-effort) | Write Settings |
+| **Keep screen awake** | raises `SCREEN_OFF_TIMEOUT` | Write Settings |
+| **Max brightness** | manual brightness mode + max level | Write Settings |
+| **Live telemetry** | battery, thermal status, RAM, foreground app | Usage Access (foreground app only) |
 
-```sh
-# Using npm
-npm start
+The work runs inside a **foreground service** (persistent notification + `START_STICKY`)
+— the legitimate, owner-visible way to keep running in the background. Original
+values are snapshotted and restored when the boost stops.
 
-# OR using Yarn
-yarn start
+### The "no-root, owner-grants-access" model
+
+Everything is gated behind a permission you toggle in system Settings and can
+revoke any time. Open the **Access** tab to grant:
+
+- Notifications · Do Not Disturb access · Modify system settings ·
+  Usage access · Ignore battery optimizations · Display over other apps
+
+Nothing happens without your grant — no silent control, no blocking of other apps.
+
+## Project layout
+
+```
+App.tsx                      # tab shell (Boost / Profiles / Access)
+src/
+  theme.ts                   # palette + helpers
+  native/CantosHub.ts        # typed bridge wrapper (mocks if native absent)
+  state/store.tsx            # profiles / permissions / boost state (context)
+  components/ui.tsx          # shared UI bits
+  screens/                   # DashboardScreen, ProfilesScreen, PermissionsScreen
+android/app/src/main/java/com/cantoshub/
+  CantosHubModule.kt         # RN bridge: permissions, telemetry, boost control
+  CantosHubPackage.kt        # registers the module
+  BoostService.kt            # foreground service
+  BoostActions.kt            # apply / revert device tweaks (+ snapshot)
 ```
 
-## Step 2: Build and run your app
+## Build & run
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+```bash
+npm install
+npx react-native run-android      # device or emulator
 ```
 
-### iOS
+First launch: open **Access** and grant the permissions. Then **Boost** → Start.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Roadmap
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+- **Phase 0 (this scaffold)** — permission-driven boost + profiles + telemetry. No root.
+- **Phase 1 — Shizuku tier** (still no root): owner authorizes once over wireless
+  debugging → ADB-level powers: per-game resolution/DPI downscale, freeze chosen
+  background apps, broader settings control.
+- **Phase 2** — auto-apply profiles by foreground game (UsageStats watcher in the
+  service), live FPS/temp overlay (`SYSTEM_ALERT_WINDOW`).
+- **Phase 3** — game launcher/library, per-game stats, boot persistence.
 
-```sh
-bundle install
+## GitHub
+
+This folder is its own git repo. To publish (e.g. under the same account as the
+other Cantos repos):
+
+```bash
+# create an empty CantosHub repo on GitHub first, then:
+git remote add origin https://github.com/<account>/CantosHub.git
+git push -u origin main
 ```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.

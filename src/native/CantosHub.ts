@@ -83,6 +83,7 @@ type NativeShape = {
   listInstalledApps(): Promise<InstalledApp[]>;
   listGames(): Promise<GameInfo[]>;
   launchApp(packageName: string): Promise<boolean>;
+  getAppIcon(packageName: string): Promise<string | null>;
 };
 
 const native: NativeShape | undefined =
@@ -208,6 +209,12 @@ export const CantosHub = {
   async launchApp(packageName: string): Promise<boolean> {
     if (!native) return true;
     return native.launchApp(packageName);
+  },
+
+  /** Base64 data-URI of the app's launcher icon, or null. */
+  async getAppIcon(packageName: string): Promise<string | null> {
+    if (!native) return null;
+    return native.getAppIcon(packageName);
   },
 };
 

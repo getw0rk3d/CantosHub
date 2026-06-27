@@ -8,7 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.util.Base64
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
@@ -19,6 +24,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import java.io.ByteArrayOutputStream
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
 
@@ -336,6 +342,31 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     } catch (e: Exception) {
       promise.reject("LIST_GAMES_ERR", e)
     }
+  }
+
+  @ReactMethod
+  fun getAppIcon(packageName: String, promise: Promise) {
+    try {
+      val icon = ctx.packageManager.getApplicationIcon(packageName)
+      val bmp = drawableToBitmap(icon, 96)
+      val baos = ByteArrayOutputStream()
+      bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
+      val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+      promise.resolve("data:image/png;base64,$b64")
+    } catch (e: Exception) {
+      promise.resolve(null)
+    }
+  }
+
+  private fun drawableToBitmap(drawable: Drawable, size: Int): Bitmap {
+    if (drawable is BitmapDrawable && drawable.bitmap != null) {
+      return Bitmap.createScaledBitmap(drawable.bitmap, size, size, true)
+    }
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bmp)
+    drawable.setBounds(0, 0, size, size)
+    drawable.draw(canvas)
+    return bmp
   }
 
   @ReactMethod

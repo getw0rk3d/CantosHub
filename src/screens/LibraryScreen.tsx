@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -34,6 +35,37 @@ function fmtTime(ms: number): string {
   if (m < 1) return '—';
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+// Cache icons across renders/tabs so we fetch each app's icon at most once.
+const iconCache = new Map<string, string | null>();
+
+function AppIcon({ packageName, label }: { packageName: string; label: string }) {
+  const [uri, setUri] = useState<string | null>(iconCache.get(packageName) ?? null);
+
+  useEffect(() => {
+    if (iconCache.has(packageName)) {
+      setUri(iconCache.get(packageName) ?? null);
+      return;
+    }
+    let cancelled = false;
+    CantosHub.getAppIcon(packageName).then(u => {
+      iconCache.set(packageName, u);
+      if (!cancelled) setUri(u);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [packageName]);
+
+  if (uri) {
+    return <Image source={{ uri }} style={styles.avatar} resizeMode="cover" />;
+  }
+  return (
+    <View style={[styles.avatar, { backgroundColor: avatarColor(packageName) }]}>
+      <Text style={styles.avatarText}>{label.charAt(0).toUpperCase()}</Text>
+    </View>
+  );
 }
 
 export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: () => void }) {
@@ -114,9 +146,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
             return (
               <View key={g.packageName} style={styles.gameCard}>
                 <View style={styles.gameTop}>
-                  <View style={[styles.avatar, { backgroundColor: avatarColor(g.packageName) }]}>
-                    <Text style={styles.avatarText}>{g.label.charAt(0).toUpperCase()}</Text>
-                  </View>
+                  <AppIcon packageName={g.packageName} label={g.label} />
                   <View style={styles.gameText}>
                     <Text style={styles.gameLabel} numberOfLines={1}>
                       {g.label}

@@ -35,6 +35,7 @@ export default function ProfilesScreen() {
   const store = useStore();
   const [newName, setNewName] = useState('');
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [gamePickerFor, setGamePickerFor] = useState<string | null>(null);
   const shizukuGranted = !!store.shizuku?.granted;
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function ProfilesScreen() {
   }, []);
 
   const pickerProfile = store.profiles.find(p => p.id === pickerFor) || null;
+  const gameProfile = store.profiles.find(p => p.id === gamePickerFor) || null;
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -61,6 +63,7 @@ export default function ProfilesScreen() {
           onChange={(key, v) => store.updateProfile(p.id, { [key]: v })}
           onResolution={value => store.updateProfile(p.id, { resolutionScale: value })}
           onPickApps={() => setPickerFor(p.id)}
+          onPickGame={() => setGamePickerFor(p.id)}
           onDelete={store.profiles.length > 1 ? () => store.deleteProfile(p.id) : undefined}
         />
       ))}
@@ -92,8 +95,28 @@ export default function ProfilesScreen() {
           setPickerFor(null);
         }}
       />
+
+      <AppPickerModal
+        visible={!!gameProfile}
+        multiSelect={false}
+        title="Assign game"
+        subtitle="In Auto mode this profile applies when this app is in the foreground."
+        initialSelected={gameProfile?.packageName ? [gameProfile.packageName] : []}
+        onClose={() => setGamePickerFor(null)}
+        onSave={selected => {
+          if (gamePickerFor) {
+            store.updateProfile(gamePickerFor, { packageName: selected[0] });
+          }
+          setGamePickerFor(null);
+        }}
+      />
     </ScrollView>
   );
+}
+
+function shortPkg(pkg: string): string {
+  const parts = pkg.split('.');
+  return parts.length > 1 ? parts.slice(-2).join('.') : pkg;
 }
 
 function ProfileCard({
@@ -104,6 +127,7 @@ function ProfileCard({
   onChange,
   onResolution,
   onPickApps,
+  onPickGame,
   onDelete,
 }: {
   profile: BoostProfile;
@@ -113,6 +137,7 @@ function ProfileCard({
   onChange: (key: ToggleKey, value: boolean) => void;
   onResolution: (value: number) => void;
   onPickApps: () => void;
+  onPickGame: () => void;
   onDelete?: () => void;
 }) {
   const scale = profile.resolutionScale ?? 1;
@@ -141,6 +166,13 @@ function ProfileCard({
           />
         </View>
       ))}
+
+      <Pressable style={styles.fieldRow} onPress={onPickGame}>
+        <Text style={styles.fieldLabel}>Game (for Auto)</Text>
+        <Text style={styles.link}>
+          {profile.packageName ? shortPkg(profile.packageName) : 'Not set'}
+        </Text>
+      </Pressable>
 
       {/* Pro tier (Shizuku) */}
       <View style={styles.proHeader}>
@@ -182,11 +214,17 @@ function ProfileCard({
 function AppPickerModal({
   visible,
   initialSelected,
+  multiSelect = true,
+  title = 'Freeze while gaming',
+  subtitle = 'Selected apps are suspended on boost and restored when you stop.',
   onClose,
   onSave,
 }: {
   visible: boolean;
   initialSelected: string[];
+  multiSelect?: boolean;
+  title?: string;
+  subtitle?: string;
   onClose: () => void;
   onSave: (selected: string[]) => void;
 }) {
@@ -206,6 +244,9 @@ function AppPickerModal({
 
   const toggle = (pkg: string) => {
     setSelected(prev => {
+      if (!multiSelect) {
+        return prev.has(pkg) ? new Set() : new Set([pkg]);
+      }
       const next = new Set(prev);
       if (next.has(pkg)) next.delete(pkg);
       else next.add(pkg);
@@ -217,10 +258,8 @@ function AppPickerModal({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalSheet}>
-          <Text style={styles.modalTitle}>Freeze while gaming</Text>
-          <Text style={styles.modalSub}>
-            Selected apps are suspended on boost and restored when you stop.
-          </Text>
+          <Text style={styles.modalTitle}>{title}</Text>
+          <Text style={styles.modalSub}>{subtitle}</Text>
 
           {loading ? (
             <ActivityIndicator color={colors.accent} style={{ marginVertical: spacing.xl }} />

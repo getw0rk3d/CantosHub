@@ -139,20 +139,54 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   // --- Boost service control ---
   @ReactMethod
-  fun startBoost(profileJson: String, promise: Promise) {
+  fun startBoost(profileJson: String, showOverlay: Boolean, promise: Promise) {
     try {
       val intent = Intent(ctx, BoostService::class.java).apply {
         action = BoostService.ACTION_START
         putExtra(BoostService.EXTRA_PROFILE, profileJson)
+        putExtra(BoostService.EXTRA_OVERLAY, showOverlay)
       }
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        ctx.startForegroundService(intent)
-      } else {
-        ctx.startService(intent)
-      }
+      startBoostService(intent)
       promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("BOOST_START_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun startAutoBoost(profilesJson: String, showOverlay: Boolean, promise: Promise) {
+    try {
+      val intent = Intent(ctx, BoostService::class.java).apply {
+        action = BoostService.ACTION_START_AUTO
+        putExtra(BoostService.EXTRA_PROFILES, profilesJson)
+        putExtra(BoostService.EXTRA_OVERLAY, showOverlay)
+      }
+      startBoostService(intent)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("BOOST_AUTO_ERR", e)
+    }
+  }
+
+  /** Undo any settings left applied if the app was killed mid-boost. Idempotent. */
+  @ReactMethod
+  fun reconcile(promise: Promise) {
+    try {
+      if (!BoostService.isRunning) {
+        BoostActions.revert(ctx)
+        ShizukuActions.revert(ctx) { }
+      }
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("RECONCILE_ERR", e)
+    }
+  }
+
+  private fun startBoostService(intent: Intent) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      ctx.startForegroundService(intent)
+    } else {
+      ctx.startService(intent)
     }
   }
 

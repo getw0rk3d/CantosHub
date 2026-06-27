@@ -61,9 +61,11 @@ type NativeShape = {
   getPermissionStatus(): Promise<PermissionStatus>;
   openPermissionSettings(which: PermissionKey | 'appDetails'): void;
   getTelemetry(): Promise<Telemetry>;
-  startBoost(profileJson: string): Promise<boolean>;
+  startBoost(profileJson: string, showOverlay: boolean): Promise<boolean>;
+  startAutoBoost(profilesJson: string, showOverlay: boolean): Promise<boolean>;
   stopBoost(): Promise<boolean>;
   isBoostRunning(): Promise<boolean>;
+  reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
   setMaxBrightness(enable: boolean): Promise<boolean>;
   setKeepAwake(enable: boolean): Promise<boolean>;
@@ -115,9 +117,17 @@ export const CantosHub = {
     return native.getTelemetry();
   },
 
-  async startBoost(profile: BoostProfile): Promise<boolean> {
+  async startBoost(profile: BoostProfile, showOverlay = false): Promise<boolean> {
     if (!native) return true;
-    return native.startBoost(JSON.stringify(profile));
+    return native.startBoost(JSON.stringify(profile), showOverlay);
+  },
+
+  async startAutoBoost(
+    profiles: BoostProfile[],
+    showOverlay = false,
+  ): Promise<boolean> {
+    if (!native) return true;
+    return native.startAutoBoost(JSON.stringify(profiles), showOverlay);
   },
 
   async stopBoost(): Promise<boolean> {
@@ -128,6 +138,12 @@ export const CantosHub = {
   async isBoostRunning(): Promise<boolean> {
     if (!native) return false;
     return native.isBoostRunning();
+  },
+
+  /** Undo any lingering changes if the app was killed mid-boost. */
+  async reconcile(): Promise<boolean> {
+    if (!native) return true;
+    return native.reconcile();
   },
 
   async setDnd(enable: boolean): Promise<boolean> {

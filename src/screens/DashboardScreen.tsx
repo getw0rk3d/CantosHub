@@ -32,7 +32,7 @@ const TOGGLES: { key: ToggleKey; label: string; desc: string }[] = [
 
 export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: () => void }) {
   const store = useStore();
-  const { activeProfile, boostRunning, permissions } = store;
+  const { activeProfile, boostRunning, permissions, autoMode, showOverlay } = store;
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,18 +112,51 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
         disabled={busy}
         style={[styles.master, boostRunning && styles.masterOn]}>
         <Text style={[styles.masterTitle, boostRunning && styles.masterTitleOn]}>
-          {boostRunning ? 'BOOST ACTIVE' : 'START BOOST'}
+          {boostRunning
+            ? autoMode
+              ? 'AUTO BOOST ON'
+              : 'BOOST ACTIVE'
+            : autoMode
+            ? 'START AUTO BOOST'
+            : 'START BOOST'}
         </Text>
-        <Text style={styles.masterProfile}>Profile: {activeProfile.name}</Text>
+        <Text style={styles.masterProfile}>
+          {autoMode ? 'Auto-applies a profile per game' : `Profile: ${activeProfile.name}`}
+        </Text>
       </Pressable>
       <View style={{ height: spacing.lg }}>
         <PrimaryButton
-          title={boostRunning ? 'Stop boost' : 'Start boost'}
+          title={boostRunning ? 'Stop boost' : autoMode ? 'Start auto boost' : 'Start boost'}
           onPress={onMaster}
           busy={busy}
           variant={boostRunning ? 'danger' : 'solid'}
         />
       </View>
+
+      {/* Mode */}
+      <SectionCard title="Mode">
+        <ToggleRow
+          label="Auto by game"
+          description="Apply each profile automatically when its game opens"
+          value={autoMode}
+          onValueChange={store.setAutoMode}
+          locked={!!permissions && !permissions.usageAccess}
+          lockedHint="Needs Usage access"
+          onPressLocked={onGoPermissions}
+        />
+        <ToggleRow
+          label="Show overlay HUD"
+          description="Battery · thermal · RAM on top of your game"
+          value={showOverlay}
+          onValueChange={store.setShowOverlay}
+          locked={!!permissions && !permissions.overlay}
+          lockedHint="Needs Display-over-apps"
+          onPressLocked={onGoPermissions}
+        />
+        {boostRunning && (
+          <Text style={styles.modeHint}>Stop & start a boost to apply mode changes.</Text>
+        )}
+      </SectionCard>
 
       {/* Live telemetry */}
       <SectionCard title="Live status">
@@ -227,6 +260,7 @@ const styles = StyleSheet.create({
   masterProfile: { color: colors.textDim, fontSize: 13, marginTop: 6 },
   statGrid: { flexDirection: 'row', gap: spacing.md },
   warnLine: { color: colors.warn, fontSize: 12, marginTop: spacing.md },
+  modeHint: { color: colors.textDim, fontSize: 12, marginTop: spacing.sm },
   link: { color: colors.accent2, fontWeight: '700', fontSize: 13 },
   footnote: {
     color: colors.textDim,

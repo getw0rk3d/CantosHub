@@ -9,6 +9,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -72,6 +73,11 @@ type Store = {
   refreshShizuku: () => Promise<void>;
   requestShizuku: () => Promise<void>;
 
+  autoMode: boolean;
+  setAutoMode: (v: boolean) => void;
+  showOverlay: boolean;
+  setShowOverlay: (v: boolean) => void;
+
   boostRunning: boolean;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
@@ -86,6 +92,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [activeProfileId, setActiveProfileId] = useState<string>('balanced');
   const [permissions, setPermissions] = useState<PermissionStatus | null>(null);
   const [shizuku, setShizuku] = useState<ShizukuStatus | null>(null);
+  const [autoMode, setAutoMode] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
   const [boostRunning, setBoostRunning] = useState(false);
 
   const activeProfile = useMemo(
@@ -94,8 +102,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
   const activeRef = useRef(activeProfile);
   activeRef.current = activeProfile;
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
   const shizukuRef = useRef(shizuku);
   shizukuRef.current = shizuku;
+  const autoRef = useRef(autoMode);
+  autoRef.current = autoMode;
+  const overlayRef = useRef(showOverlay);
+  overlayRef.current = showOverlay;
 
   const refreshPermissions = useCallback(async () => {
     try {
@@ -175,15 +189,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const startBoost = useCallback(async () => {
-    const p = activeRef.current;
-    await CantosHub.startBoost(p);
-    const usesShizuku =
-      (p.resolutionScale ?? 1) < 1 || (p.freezeApps?.length ?? 0) > 0;
-    if (shizukuRef.current?.granted && usesShizuku) {
-      try {
-        await CantosHub.applyShizukuProfile(p);
-      } catch {
-        // best-effort; no-root toggles still applied
+    const overlay = overlayRef.current;
+    if (autoRef.current) {
+      // Auto mode: the service watches the foreground game and applies the
+      // matching profile (incl. its Shizuku parts) itself.
+      await CantosHub.startAutoBoost(profilesRef.current, overlay);
+    } else {
+      const p = activeRef.current;
+      await CantosHub.startBoost(p, overlay);
+      const usesShizuku =
+        (p.resolutionScale ?? 1) < 1 || (p.freezeApps?.length ?? 0) > 0;
+      if (shizukuRef.current?.granted && usesShizuku) {
+        try {
+          await CantosHub.applyShizukuProfile(p);
+        } catch {
+          // best-effort; no-root toggles still applied
+        }
       }
     }
     setBoostRunning(true);
@@ -213,6 +234,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [applyToggleNative, boostRunning, updateProfile],
   );
 
+  // On launch, undo anything left applied if the app was killed mid-boost,
+  // and prime permission/Shizuku status.
+  useEffect(() => {
+    CantosHub.reconcile().catch(() => {});
+    refreshPermissions();
+    refreshShizuku();
+  }, [refreshPermissions, refreshShizuku]);
+
   const value: Store = {
     profiles,
     activeProfileId,
@@ -226,6 +255,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     shizuku,
     refreshShizuku,
     requestShizuku,
+    autoMode,
+    setAutoMode,
+    showOverlay,
+    setShowOverlay,
     boostRunning,
     startBoost,
     stopBoost,

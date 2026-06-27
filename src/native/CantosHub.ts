@@ -57,6 +57,12 @@ export type InstalledApp = {
   label: string;
 };
 
+export type GameInfo = {
+  packageName: string;
+  label: string;
+  totalTimeMs: number; // foreground time over the last ~7 days
+};
+
 type NativeShape = {
   getPermissionStatus(): Promise<PermissionStatus>;
   openPermissionSettings(which: PermissionKey | 'appDetails'): void;
@@ -75,6 +81,8 @@ type NativeShape = {
   applyShizukuProfile(profileJson: string): Promise<boolean>;
   revertShizukuProfile(): Promise<boolean>;
   listInstalledApps(): Promise<InstalledApp[]>;
+  listGames(): Promise<GameInfo[]>;
+  launchApp(packageName: string): Promise<boolean>;
 };
 
 const native: NativeShape | undefined =
@@ -190,6 +198,16 @@ export const CantosHub = {
   async listInstalledApps(): Promise<InstalledApp[]> {
     if (!native) return [];
     return native.listInstalledApps();
+  },
+
+  async listGames(): Promise<GameInfo[]> {
+    if (!native) return [];
+    return native.listGames();
+  },
+
+  async launchApp(packageName: string): Promise<boolean> {
+    if (!native) return true;
+    return native.launchApp(packageName);
   },
 };
 

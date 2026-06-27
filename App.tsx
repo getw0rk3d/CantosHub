@@ -9,15 +9,17 @@ import React, { useState } from 'react';
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import DashboardScreen from './src/screens/DashboardScreen';
+import LibraryScreen from './src/screens/LibraryScreen';
 import PermissionsScreen from './src/screens/PermissionsScreen';
 import ProfilesScreen from './src/screens/ProfilesScreen';
 import { StoreProvider } from './src/state/store';
 import { colors } from './src/theme';
 
-type Tab = 'dashboard' | 'profiles' | 'permissions';
+type Tab = 'dashboard' | 'games' | 'profiles' | 'permissions';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'dashboard', label: 'Boost', icon: '⚡' },
+  { key: 'games', label: 'Games', icon: '🕹️' },
   { key: 'profiles', label: 'Profiles', icon: '🎮' },
   { key: 'permissions', label: 'Access', icon: '🔓' },
 ];
@@ -33,6 +35,9 @@ function App() {
           <View style={styles.body}>
             {tab === 'dashboard' && (
               <DashboardScreen onGoPermissions={() => setTab('permissions')} />
+            )}
+            {tab === 'games' && (
+              <LibraryScreen onGoPermissions={() => setTab('permissions')} />
             )}
             {tab === 'profiles' && <ProfilesScreen />}
             {tab === 'permissions' && <PermissionsScreen />}

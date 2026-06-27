@@ -66,8 +66,10 @@ type Store = {
   activeProfile: BoostProfile;
   setActiveProfileId: (id: string) => void;
   updateProfile: (id: string, patch: Partial<BoostProfile>) => void;
-  addProfile: (name: string) => void;
+  addProfile: (name: string) => string;
   deleteProfile: (id: string) => void;
+  /** Bind a game to a profile (and unbind it from any other profile). */
+  assignGameToProfile: (profileId: string, packageName: string) => void;
 
   permissions: PermissionStatus | null;
   refreshPermissions: () => Promise<void>;
@@ -148,7 +150,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const addProfile = useCallback((name: string) => {
+  const addProfile = useCallback((name: string): string => {
     const id = newId();
     setProfiles(prev => [
       ...prev,
@@ -162,6 +164,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       },
     ]);
     setActiveProfileId(id);
+    return id;
+  }, []);
+
+  const assignGameToProfile = useCallback((profileId: string, packageName: string) => {
+    setProfiles(prev =>
+      prev.map(p => {
+        if (p.id === profileId) return { ...p, packageName };
+        if (p.packageName === packageName) return { ...p, packageName: undefined };
+        return p;
+      }),
+    );
   }, []);
 
   const deleteProfile = useCallback(
@@ -296,6 +309,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
     addProfile,
     deleteProfile,
+    assignGameToProfile,
     permissions,
     refreshPermissions,
     shizuku,

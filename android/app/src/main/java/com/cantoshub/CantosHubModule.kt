@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.BatteryManager
@@ -301,6 +302,72 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       promise.resolve(arr)
     } catch (e: Exception) {
       promise.reject("LIST_APPS_ERR", e)
+    }
+  }
+
+  // --- Library (Phase 3) ---
+  @ReactMethod
+  fun listGames(promise: Promise) {
+    try {
+      val pm = ctx.packageManager
+      val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+      val activities = pm.queryIntentActivities(launchable, 0)
+      val usage = weeklyUsage()
+      val seen = HashSet<String>()
+      val arr = Arguments.createArray()
+      for (ri in activities) {
+        val ai = ri.activityInfo.applicationInfo
+        val pkg = ai.packageName
+        if (pkg == ctx.packageName || !seen.add(pkg)) continue
+        val isGame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          ai.category == ApplicationInfo.CATEGORY_GAME
+        } else {
+          @Suppress("DEPRECATION")
+          (ai.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+        }
+        if (!isGame) continue
+        val m = Arguments.createMap()
+        m.putString("packageName", pkg)
+        m.putString("label", ri.loadLabel(pm).toString())
+        m.putDouble("totalTimeMs", (usage[pkg] ?: 0L).toDouble())
+        arr.pushMap(m)
+      }
+      promise.resolve(arr)
+    } catch (e: Exception) {
+      promise.reject("LIST_GAMES_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun launchApp(packageName: String, promise: Promise) {
+    try {
+      val intent = ctx.packageManager.getLaunchIntentForPackage(packageName)
+      if (intent == null) {
+        promise.resolve(false)
+        return
+      }
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      ctx.startActivity(intent)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("LAUNCH_ERR", e)
+    }
+  }
+
+  private fun weeklyUsage(): Map<String, Long> {
+    return try {
+      val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+      val now = System.currentTimeMillis()
+      val start = now - 7L * 24 * 60 * 60 * 1000
+      val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_WEEKLY, start, now)
+        ?: return emptyMap()
+      val map = HashMap<String, Long>()
+      for (s in stats) {
+        map[s.packageName] = (map[s.packageName] ?: 0L) + s.totalTimeInForeground
+      }
+      map
+    } catch (e: Exception) {
+      emptyMap()
     }
   }
 

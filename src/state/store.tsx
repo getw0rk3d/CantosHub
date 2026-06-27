@@ -17,6 +17,7 @@ import {
   BoostProfile,
   CantosHub,
   PermissionStatus,
+  ShizukuStatus,
   TOGGLE_PERMISSION,
 } from '../native/CantosHub';
 
@@ -67,6 +68,10 @@ type Store = {
   permissions: PermissionStatus | null;
   refreshPermissions: () => Promise<void>;
 
+  shizuku: ShizukuStatus | null;
+  refreshShizuku: () => Promise<void>;
+  requestShizuku: () => Promise<void>;
+
   boostRunning: boolean;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
@@ -80,6 +85,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<BoostProfile[]>(DEFAULT_PROFILES);
   const [activeProfileId, setActiveProfileId] = useState<string>('balanced');
   const [permissions, setPermissions] = useState<PermissionStatus | null>(null);
+  const [shizuku, setShizuku] = useState<ShizukuStatus | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
 
   const activeProfile = useMemo(
@@ -88,6 +94,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
   const activeRef = useRef(activeProfile);
   activeRef.current = activeProfile;
+  const shizukuRef = useRef(shizuku);
+  shizukuRef.current = shizuku;
 
   const refreshPermissions = useCallback(async () => {
     try {
@@ -96,6 +104,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // leave previous value; UI shows "unknown"
     }
   }, []);
+
+  const refreshShizuku = useCallback(async () => {
+    try {
+      setShizuku(await CantosHub.getShizukuStatus());
+    } catch {
+      setShizuku({ available: false, granted: false });
+    }
+  }, []);
+
+  const requestShizuku = useCallback(async () => {
+    try {
+      await CantosHub.requestShizukuPermission();
+    } finally {
+      await refreshShizuku();
+    }
+  }, [refreshShizuku]);
 
   const updateProfile = useCallback(
     (id: string, patch: Partial<BoostProfile>) => {
@@ -151,12 +175,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const startBoost = useCallback(async () => {
-    await CantosHub.startBoost(activeRef.current);
+    const p = activeRef.current;
+    await CantosHub.startBoost(p);
+    const usesShizuku =
+      (p.resolutionScale ?? 1) < 1 || (p.freezeApps?.length ?? 0) > 0;
+    if (shizukuRef.current?.granted && usesShizuku) {
+      try {
+        await CantosHub.applyShizukuProfile(p);
+      } catch {
+        // best-effort; no-root toggles still applied
+      }
+    }
     setBoostRunning(true);
   }, []);
 
   const stopBoost = useCallback(async () => {
     await CantosHub.stopBoost();
+    try {
+      await CantosHub.revertShizukuProfile();
+    } catch {
+      // ignore
+    }
     setBoostRunning(false);
   }, []);
 
@@ -184,6 +223,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     deleteProfile,
     permissions,
     refreshPermissions,
+    shizuku,
+    refreshShizuku,
+    requestShizuku,
     boostRunning,
     startBoost,
     stopBoost,

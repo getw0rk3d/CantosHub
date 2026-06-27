@@ -46,6 +46,7 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   useEffect(() => {
     mounted.current = true;
     store.refreshPermissions();
+    store.refreshShizuku();
     loadTelemetry();
     CantosHub.isBoostRunning().then(running => {
       if (running !== boostRunning && mounted.current) {

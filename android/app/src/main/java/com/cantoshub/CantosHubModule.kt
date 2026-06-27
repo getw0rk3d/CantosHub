@@ -18,15 +18,47 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import org.json.JSONObject
+import rikka.shizuku.Shizuku
 
 /**
  * RN bridge for CantosHub. Exposes permission status/launchers, live telemetry,
- * boost service control, and quick toggle setters. Entirely no-root.
+ * boost service control, and quick toggle setters (no-root), plus the optional
+ * Shizuku "Pro" tier (owner-authorized ADB-level access — still no root).
  */
 class CantosHubModule(private val ctx: ReactApplicationContext) :
   ReactContextBaseJavaModule(ctx) {
 
   override fun getName() = "CantosHub"
+
+  private var shizukuPromise: Promise? = null
+  private val shizukuPermListener =
+    Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+      if (requestCode == SHIZUKU_REQ) {
+        shizukuPromise?.resolve(grantResult == PackageManager.PERMISSION_GRANTED)
+        shizukuPromise = null
+      }
+    }
+
+  init {
+    try {
+      Shizuku.addRequestPermissionResultListener(shizukuPermListener)
+    } catch (e: Exception) {
+      // Shizuku not present yet; status calls will just report unavailable.
+    }
+  }
+
+  override fun invalidate() {
+    try {
+      Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
+    } catch (e: Exception) {
+    }
+    super.invalidate()
+  }
+
+  companion object {
+    private const val SHIZUKU_REQ = 4001
+  }
 
   // --- Permissions ---
   @ReactMethod
@@ -162,6 +194,79 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       promise.resolve(block())
     } catch (e: Exception) {
       promise.reject("ACTION_ERR", e)
+    }
+  }
+
+  // --- Shizuku "Pro" tier (no root) ---
+  @ReactMethod
+  fun getShizukuStatus(promise: Promise) {
+    try {
+      val available = ShizukuManager.isAvailable()
+      val m = Arguments.createMap()
+      m.putBoolean("available", available)
+      m.putBoolean("granted", available && ShizukuManager.hasPermission())
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.reject("SHIZUKU_STATUS_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun requestShizukuPermission(promise: Promise) {
+    try {
+      if (!ShizukuManager.isAvailable()) {
+        promise.resolve(false)
+        return
+      }
+      if (ShizukuManager.hasPermission()) {
+        promise.resolve(true)
+        return
+      }
+      shizukuPromise = promise
+      Shizuku.requestPermission(SHIZUKU_REQ)
+    } catch (e: Exception) {
+      shizukuPromise = null
+      promise.reject("SHIZUKU_REQ_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun applyShizukuProfile(profileJson: String, promise: Promise) {
+    try {
+      ShizukuActions.apply(ctx, JSONObject(profileJson)) { ok -> promise.resolve(ok) }
+    } catch (e: Exception) {
+      promise.reject("SHIZUKU_APPLY_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun revertShizukuProfile(promise: Promise) {
+    try {
+      ShizukuActions.revert(ctx) { ok -> promise.resolve(ok) }
+    } catch (e: Exception) {
+      promise.reject("SHIZUKU_REVERT_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun listInstalledApps(promise: Promise) {
+    try {
+      val pm = ctx.packageManager
+      val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+      val activities = pm.queryIntentActivities(launchable, 0)
+      val seen = HashSet<String>()
+      val arr = Arguments.createArray()
+      for (ri in activities) {
+        val pkg = ri.activityInfo.packageName
+        if (pkg == ctx.packageName || !seen.add(pkg)) continue
+        val m = Arguments.createMap()
+        m.putString("packageName", pkg)
+        m.putString("label", ri.loadLabel(pm).toString())
+        arr.pushMap(m)
+      }
+      promise.resolve(arr)
+    } catch (e: Exception) {
+      promise.reject("LIST_APPS_ERR", e)
     }
   }
 

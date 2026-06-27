@@ -85,6 +85,10 @@ android {
         versionCode 1
         versionName "1.0"
     }
+    // AGP 8 disables AIDL by default; the Shizuku UserService needs it.
+    buildFeatures {
+        aidl true
+    }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -110,6 +114,10 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // Shizuku — owner-authorized, ADB-level access (no root) for the Pro tier
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

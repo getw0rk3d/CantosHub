@@ -40,6 +40,21 @@ export type BoostProfile = {
   peakRefreshRate: boolean;
   keepAwake: boolean;
   maxBrightness: boolean;
+  // --- Pro tier (Shizuku, no root) ---
+  /** 1.0 = native; <1 downscales resolution + density (e.g. 0.8). */
+  resolutionScale?: number;
+  /** Packages to suspend while boosting. */
+  freezeApps?: string[];
+};
+
+export type ShizukuStatus = {
+  available: boolean; // Shizuku running & reachable
+  granted: boolean; // user authorized CantosHub
+};
+
+export type InstalledApp = {
+  packageName: string;
+  label: string;
 };
 
 type NativeShape = {
@@ -53,6 +68,11 @@ type NativeShape = {
   setMaxBrightness(enable: boolean): Promise<boolean>;
   setKeepAwake(enable: boolean): Promise<boolean>;
   setPeakRefreshRate(enable: boolean): Promise<boolean>;
+  getShizukuStatus(): Promise<ShizukuStatus>;
+  requestShizukuPermission(): Promise<boolean>;
+  applyShizukuProfile(profileJson: string): Promise<boolean>;
+  revertShizukuProfile(): Promise<boolean>;
+  listInstalledApps(): Promise<InstalledApp[]>;
 };
 
 const native: NativeShape | undefined =
@@ -128,6 +148,32 @@ export const CantosHub = {
   async setPeakRefreshRate(enable: boolean): Promise<boolean> {
     if (!native) return true;
     return native.setPeakRefreshRate(enable);
+  },
+
+  // --- Pro tier (Shizuku, no root) ---
+  async getShizukuStatus(): Promise<ShizukuStatus> {
+    if (!native) return { available: false, granted: false };
+    return native.getShizukuStatus();
+  },
+
+  async requestShizukuPermission(): Promise<boolean> {
+    if (!native) return false;
+    return native.requestShizukuPermission();
+  },
+
+  async applyShizukuProfile(profile: BoostProfile): Promise<boolean> {
+    if (!native) return true;
+    return native.applyShizukuProfile(JSON.stringify(profile));
+  },
+
+  async revertShizukuProfile(): Promise<boolean> {
+    if (!native) return true;
+    return native.revertShizukuProfile();
+  },
+
+  async listInstalledApps(): Promise<InstalledApp[]> {
+    if (!native) return [];
+    return native.listInstalledApps();
   },
 };
 

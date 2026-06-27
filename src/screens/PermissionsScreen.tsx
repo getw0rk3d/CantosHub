@@ -5,7 +5,7 @@
  */
 import React, { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SectionCard, StatusDot } from '../components/ui';
+import { Badge, PrimaryButton, SectionCard, StatusDot } from '../components/ui';
 import { CantosHub, PermissionKey } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
@@ -47,8 +47,11 @@ export default function PermissionsScreen() {
   const store = useStore();
   const { permissions } = store;
 
+  const { shizuku } = store;
+
   useEffect(() => {
     store.refreshPermissions();
+    store.refreshShizuku();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -89,13 +92,48 @@ export default function PermissionsScreen() {
         })}
       </SectionCard>
 
-      <SectionCard title="Want deeper control?">
+      <SectionCard
+        title="Pro tier · Shizuku"
+        right={
+          shizuku ? (
+            <Badge
+              text={shizuku.granted ? 'AUTHORIZED' : shizuku.available ? 'NOT AUTHORIZED' : 'NOT RUNNING'}
+              color={shizuku.granted ? colors.accent : shizuku.available ? colors.warn : colors.textDim}
+            />
+          ) : undefined
+        }>
         <Text style={styles.note}>
-          A future "Pro" tier can use <Text style={styles.bold}>Shizuku</Text> — you
-          authorize it once over wireless debugging and CantosHub gains ADB-level powers
+          <Text style={styles.bold}>Shizuku</Text> grants CantosHub ADB-level powers
           (per-game resolution scaling, freezing background apps) with{' '}
-          <Text style={styles.bold}>still no root</Text>. It stays fully owner-controlled.
+          <Text style={styles.bold}>still no root</Text> — you authorize it once and stay
+          in control.
         </Text>
+
+        {shizuku?.granted ? (
+          <Text style={[styles.note, { color: colors.accent, marginTop: spacing.sm }]}>
+            ✓ Connected — Pro options are unlocked in Profiles.
+          </Text>
+        ) : shizuku?.available ? (
+          <View style={{ marginTop: spacing.md }}>
+            <PrimaryButton title="Authorize CantosHub" onPress={() => store.requestShizuku()} />
+          </View>
+        ) : (
+          <View style={{ marginTop: spacing.sm }}>
+            <Text style={styles.note}>To enable (one time, no root):</Text>
+            <Text style={styles.step}>1. Install the Shizuku app from the Play Store.</Text>
+            <Text style={styles.step}>
+              2. Start it via wireless debugging (Shizuku walks you through it) or a PC over ADB.
+            </Text>
+            <Text style={styles.step}>3. Come back here and tap Authorize.</Text>
+            <View style={{ marginTop: spacing.md }}>
+              <PrimaryButton
+                title="Re-check Shizuku"
+                variant="outline"
+                onPress={() => store.refreshShizuku()}
+              />
+            </View>
+          </View>
+        )}
       </SectionCard>
     </ScrollView>
   );
@@ -115,5 +153,6 @@ const styles = StyleSheet.create({
   actionGranted: { color: colors.accent },
   link: { color: colors.accent2, fontWeight: '700', fontSize: 13 },
   note: { color: colors.textDim, fontSize: 13, lineHeight: 20 },
+  step: { color: colors.textDim, fontSize: 13, lineHeight: 20, marginTop: 4 },
   bold: { color: colors.text, fontWeight: '700' },
 });

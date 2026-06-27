@@ -5,6 +5,7 @@
  * Phase 0 keeps profiles in memory. Persisting them (AsyncStorage) is a tiny
  * follow-up — left out here to keep the scaffold dependency-free.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {
   createContext,
   useCallback,
@@ -21,6 +22,8 @@ import {
   ShizukuStatus,
   TOGGLE_PERMISSION,
 } from '../native/CantosHub';
+
+const STORAGE_KEY = 'cantoshub_state_v1';
 
 export type ToggleKey = 'dnd' | 'peakRefreshRate' | 'keepAwake' | 'maxBrightness';
 
@@ -54,7 +57,7 @@ const DEFAULT_PROFILES: BoostProfile[] = [
 let idCounter = 0;
 function newId(): string {
   idCounter += 1;
-  return `profile_${idCounter}_${DEFAULT_PROFILES.length}`;
+  return `profile_${Date.now()}_${idCounter}`;
 }
 
 type Store = {
@@ -95,6 +98,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [autoMode, setAutoMode] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [boostRunning, setBoostRunning] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   const activeProfile = useMemo(
     () => profiles.find(p => p.id === activeProfileId) ?? profiles[0],
@@ -241,6 +245,48 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     refreshPermissions();
     refreshShizuku();
   }, [refreshPermissions, refreshShizuku]);
+
+  // Hydrate persisted profiles + settings once.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then(raw => {
+        if (cancelled || !raw) return;
+        const saved = JSON.parse(raw) as Partial<{
+          profiles: BoostProfile[];
+          activeProfileId: string;
+          autoMode: boolean;
+          showOverlay: boolean;
+        }>;
+        if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
+          setProfiles(saved.profiles);
+          const ids = saved.profiles.map(p => p.id);
+          setActiveProfileId(
+            saved.activeProfileId && ids.includes(saved.activeProfileId)
+              ? saved.activeProfileId
+              : saved.profiles[0].id,
+          );
+        }
+        if (typeof saved.autoMode === 'boolean') setAutoMode(saved.autoMode);
+        if (typeof saved.showOverlay === 'boolean') setShowOverlay(saved.showOverlay);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist on change (only after hydration, so we don't clobber saved state).
+  useEffect(() => {
+    if (!hydrated) return;
+    AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ profiles, activeProfileId, autoMode, showOverlay }),
+    ).catch(() => {});
+  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay]);
 
   const value: Store = {
     profiles,

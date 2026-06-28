@@ -15,6 +15,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import { CHANGELOG } from '../changelog';
 import {
   BoostProfile,
@@ -98,6 +99,8 @@ type Store = {
   setAutoMode: (v: boolean) => void;
   showOverlay: boolean;
   setShowOverlay: (v: boolean) => void;
+  freeRamOnBoost: boolean;
+  setFreeRamOnBoost: (v: boolean) => void;
 
   update: UpdateState | null;
   checkForUpdate: () => Promise<void>;
@@ -122,6 +125,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [shizuku, setShizuku] = useState<ShizukuStatus | null>(null);
   const [autoMode, setAutoMode] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
+  const [freeRamOnBoost, setFreeRamOnBoost] = useState(true);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
@@ -141,6 +145,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   autoRef.current = autoMode;
   const overlayRef = useRef(showOverlay);
   overlayRef.current = showOverlay;
+  const freeRamRef = useRef(freeRamOnBoost);
+  freeRamRef.current = freeRamOnBoost;
   const updateRef = useRef(update);
   updateRef.current = update;
 
@@ -261,13 +267,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const startBoost = useCallback(async () => {
     const overlay = overlayRef.current;
+    const freeRam = freeRamRef.current;
     if (autoRef.current) {
       // Auto mode: the service watches the foreground game and applies the
       // matching profile (incl. its Shizuku parts) itself.
-      await CantosHub.startAutoBoost(profilesRef.current, overlay);
+      await CantosHub.startAutoBoost(profilesRef.current, overlay, freeRam);
     } else {
       const p = activeRef.current;
-      await CantosHub.startBoost(p, overlay);
+      await CantosHub.startBoost(p, overlay, freeRam);
       const usesShizuku =
         (p.resolutionScale ?? 1) < 1 || (p.freezeApps?.length ?? 0) > 0;
       if (shizukuRef.current?.granted && usesShizuku) {
@@ -314,6 +321,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     checkForUpdate();
   }, [refreshPermissions, refreshShizuku, checkForUpdate]);
 
+  // Re-check permissions/Shizuku whenever the app comes back to the foreground —
+  // e.g. right after the user grants a permission in system Settings.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active') {
+        refreshPermissions();
+        refreshShizuku();
+      }
+    });
+    return () => sub.remove();
+  }, [refreshPermissions, refreshShizuku]);
+
   // After an update installs, show "What's new" once for the new version.
   useEffect(() => {
     (async () => {
@@ -342,6 +361,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           activeProfileId: string;
           autoMode: boolean;
           showOverlay: boolean;
+          freeRamOnBoost: boolean;
         }>;
         if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
           setProfiles(saved.profiles);
@@ -354,6 +374,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
         if (typeof saved.autoMode === 'boolean') setAutoMode(saved.autoMode);
         if (typeof saved.showOverlay === 'boolean') setShowOverlay(saved.showOverlay);
+        if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
       })
       .catch(() => {})
       .finally(() => {
@@ -369,9 +390,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ profiles, activeProfileId, autoMode, showOverlay }),
+      JSON.stringify({ profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost }),
     ).catch(() => {});
-  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay]);
+  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost]);
 
   const value: Store = {
     profiles,
@@ -391,6 +412,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setAutoMode,
     showOverlay,
     setShowOverlay,
+    freeRamOnBoost,
+    setFreeRamOnBoost,
     update,
     checkForUpdate,
     installUpdate,

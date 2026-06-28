@@ -249,6 +249,13 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
           </View>
         </View>
         {!!cleanMsg && <Text style={styles.freeMsg}>{cleanMsg}</Text>}
+        <View style={styles.freeDivider} />
+        <ToggleRow
+          label="Auto-free RAM on boost"
+          description="Kill background apps automatically when a game launches"
+          value={store.freeRamOnBoost}
+          onValueChange={store.setFreeRamOnBoost}
+        />
       </SectionCard>
 
       {/* Live telemetry */}
@@ -370,6 +377,7 @@ const styles = StyleSheet.create({
   freeRow: { flexDirection: 'row', gap: spacing.md },
   freeBtn: { flex: 1 },
   freeMsg: { color: colors.accent, fontSize: 13, marginTop: spacing.md, lineHeight: 18 },
+  freeDivider: { height: 1, backgroundColor: colors.border, marginTop: spacing.md },
   link: { color: colors.accent2, fontWeight: '700', fontSize: 13 },
   footnote: {
     color: colors.textDim,

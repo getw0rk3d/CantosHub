@@ -147,12 +147,13 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   // --- Boost service control ---
   @ReactMethod
-  fun startBoost(profileJson: String, showOverlay: Boolean, promise: Promise) {
+  fun startBoost(profileJson: String, showOverlay: Boolean, freeRam: Boolean, promise: Promise) {
     try {
       val intent = Intent(ctx, BoostService::class.java).apply {
         action = BoostService.ACTION_START
         putExtra(BoostService.EXTRA_PROFILE, profileJson)
         putExtra(BoostService.EXTRA_OVERLAY, showOverlay)
+        putExtra(BoostService.EXTRA_FREERAM, freeRam)
       }
       startBoostService(intent)
       promise.resolve(true)
@@ -162,12 +163,13 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   }
 
   @ReactMethod
-  fun startAutoBoost(profilesJson: String, showOverlay: Boolean, promise: Promise) {
+  fun startAutoBoost(profilesJson: String, showOverlay: Boolean, freeRam: Boolean, promise: Promise) {
     try {
       val intent = Intent(ctx, BoostService::class.java).apply {
         action = BoostService.ACTION_START_AUTO
         putExtra(BoostService.EXTRA_PROFILES, profilesJson)
         putExtra(BoostService.EXTRA_OVERLAY, showOverlay)
+        putExtra(BoostService.EXTRA_FREERAM, freeRam)
       }
       startBoostService(intent)
       promise.resolve(true)
@@ -382,21 +384,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         val mi = ActivityManager.MemoryInfo()
         am.getMemoryInfo(mi)
         val before = mi.availMem
-        val mine = ctx.packageName
-        val fg = currentForegroundApp()
-        val pm = ctx.packageManager
-        val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val seen = HashSet<String>()
-        var targeted = 0
-        for (ri in pm.queryIntentActivities(launchable, 0)) {
-          val p = ri.activityInfo.packageName
-          if (p == mine || p == fg || !seen.add(p)) continue
-          try {
-            am.killBackgroundProcesses(p)
-            targeted++
-          } catch (e: Exception) {
-          }
-        }
+        val targeted = Cleanup.killBackground(ctx, currentForegroundApp())
         Thread.sleep(1000)
         am.getMemoryInfo(mi)
         val after = mi.availMem

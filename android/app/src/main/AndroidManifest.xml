@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- Owner-granted special access (toggled in system Settings, no root) -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />

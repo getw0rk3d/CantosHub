@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.0.5':
+    '• Auto Free RAM when a game launches in Auto mode\n• Wi-Fi low-latency lock during boost — steadier online play\n• Access tab now refreshes itself after you grant a permission',
   '1.0.4':
     '• Free RAM — kill background apps for more headroom (no root)\n• Clear cache (system-wide with Shizuku)\n• Per-game stats — boost count and average FPS in the Games tab\n• "What\'s new" after an update',
   '1.0.3': '• New CantosHub app icon & branding',

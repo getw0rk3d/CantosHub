@@ -9,6 +9,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
@@ -39,6 +40,7 @@ class BoostService : Service() {
     const val EXTRA_PROFILE = "profile"
     const val EXTRA_PROFILES = "profiles"
     const val EXTRA_OVERLAY = "overlay"
+    const val EXTRA_FREERAM = "freeram"
     private const val CHANNEL_ID = "cantoshub_boost"
     private const val NOTIF_ID = 7341
     private const val POLL_MS = 2500L
@@ -53,7 +55,9 @@ class BoostService : Service() {
   private var overlay: OverlayHud? = null
 
   private var showOverlay = false
+  private var freeRamOnBoost = true
   private var auto = false
+  private var wifiLock: WifiManager.WifiLock? = null
   private var profiles: List<JSONObject> = emptyList()
   private var appliedPackage: String? = null
   private var appliedProfileName: String = ""
@@ -82,13 +86,18 @@ class BoostService : Service() {
     createChannel()
     auto = false
     showOverlay = intent?.getBooleanExtra(EXTRA_OVERLAY, false) ?: false
+    freeRamOnBoost = intent?.getBooleanExtra(EXTRA_FREERAM, true) ?: true
     val profile = parseObject(intent?.getStringExtra(EXTRA_PROFILE))
     appliedProfileName = profile.optString("name", "Boost")
     startForegroundCompat(buildNotification("Boost active", "Profile: $appliedProfileName"))
     isRunning = true
+    acquireWifiLock()
     try { BoostActions.applyProfile(this, profile) } catch (e: Exception) { }
     val pkg = profile.optString("packageName", "")
     if (pkg.isNotBlank()) StatsStore.recordSession(this, pkg)
+    if (freeRamOnBoost) {
+      try { Cleanup.killBackground(this, if (pkg.isNotBlank()) pkg else null) } catch (e: Exception) { }
+    }
     startOverlayIfNeeded()
     if (showOverlay) startWorker()
   }
@@ -97,11 +106,13 @@ class BoostService : Service() {
     createChannel()
     auto = true
     showOverlay = intent?.getBooleanExtra(EXTRA_OVERLAY, false) ?: false
+    freeRamOnBoost = intent?.getBooleanExtra(EXTRA_FREERAM, true) ?: true
     profiles = parseArray(intent?.getStringExtra(EXTRA_PROFILES))
     appliedPackage = null
     appliedProfileName = ""
     startForegroundCompat(buildNotification("Auto boost", "Watching for games…"))
     isRunning = true
+    acquireWifiLock()
     startOverlayIfNeeded()
     startWorker()
   }
@@ -152,6 +163,9 @@ class BoostService : Service() {
       appliedPackage = matchPkg
       appliedProfileName = match.optString("name", "Boost")
       if (matchPkg != null) StatsStore.recordSession(this, matchPkg)
+      if (freeRamOnBoost) {
+        try { Cleanup.killBackground(this, matchPkg) } catch (e: Exception) { }
+      }
       updateNotification("Auto boost", "Active: $appliedProfileName")
     } else {
       appliedPackage = null
@@ -167,6 +181,7 @@ class BoostService : Service() {
     workHandler = null
     try { BoostActions.revert(this) } catch (e: Exception) { }
     try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+    releaseWifiLock()
     overlay?.hide()
     overlay = null
     appliedPackage = null
@@ -179,10 +194,37 @@ class BoostService : Service() {
     if (isRunning) {
       try { BoostActions.revert(this) } catch (e: Exception) { }
       try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+      releaseWifiLock()
       overlay?.hide()
       isRunning = false
     }
     super.onDestroy()
+  }
+
+  /** High-performance / low-latency Wi-Fi lock — cuts Wi-Fi power-save jitter for online games. */
+  private fun acquireWifiLock() {
+    try {
+      val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+      val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+      } else {
+        @Suppress("DEPRECATION")
+        WifiManager.WIFI_MODE_FULL_HIGH_PERF
+      }
+      val lock = wm.createWifiLock(mode, "cantoshub:boost")
+      lock.setReferenceCounted(false)
+      lock.acquire()
+      wifiLock = lock
+    } catch (e: Exception) {
+    }
+  }
+
+  private fun releaseWifiLock() {
+    try {
+      wifiLock?.let { if (it.isHeld) it.release() }
+    } catch (e: Exception) {
+    }
+    wifiLock = null
   }
 
   private fun startOverlayIfNeeded() {

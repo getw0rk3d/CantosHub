@@ -93,8 +93,12 @@ type NativeShape = {
   getPermissionStatus(): Promise<PermissionStatus>;
   openPermissionSettings(which: PermissionKey | 'appDetails'): void;
   getTelemetry(): Promise<Telemetry>;
-  startBoost(profileJson: string, showOverlay: boolean): Promise<boolean>;
-  startAutoBoost(profilesJson: string, showOverlay: boolean): Promise<boolean>;
+  startBoost(profileJson: string, showOverlay: boolean, freeRam: boolean): Promise<boolean>;
+  startAutoBoost(
+    profilesJson: string,
+    showOverlay: boolean,
+    freeRam: boolean,
+  ): Promise<boolean>;
   stopBoost(): Promise<boolean>;
   isBoostRunning(): Promise<boolean>;
   reconcile(): Promise<boolean>;
@@ -157,17 +161,22 @@ export const CantosHub = {
     return native.getTelemetry();
   },
 
-  async startBoost(profile: BoostProfile, showOverlay = false): Promise<boolean> {
+  async startBoost(
+    profile: BoostProfile,
+    showOverlay = false,
+    freeRam = true,
+  ): Promise<boolean> {
     if (!native) return true;
-    return native.startBoost(JSON.stringify(profile), showOverlay);
+    return native.startBoost(JSON.stringify(profile), showOverlay, freeRam);
   },
 
   async startAutoBoost(
     profiles: BoostProfile[],
     showOverlay = false,
+    freeRam = true,
   ): Promise<boolean> {
     if (!native) return true;
-    return native.startAutoBoost(JSON.stringify(profiles), showOverlay);
+    return native.startAutoBoost(JSON.stringify(profiles), showOverlay, freeRam);
   },
 
   async stopBoost(): Promise<boolean> {

@@ -68,6 +68,24 @@ export type VersionInfo = {
   versionName: string;
 };
 
+export type GameStat = {
+  sessions: number;
+  avgFps: number; // 0 if no FPS samples yet
+  samples: number;
+};
+
+export type FreeRamResult = {
+  freedBytes: number;
+  targeted: number;
+  availMem: number;
+  totalMem: number;
+};
+
+export type ClearCacheResult = {
+  ownFreedBytes: number;
+  systemTrim: boolean; // true if Shizuku trimmed all apps' caches
+};
+
 /** Result of installUpdate: download started, or user sent to grant install perm. */
 export type InstallResult = 'INSTALLING' | 'NEEDS_PERMISSION';
 
@@ -94,6 +112,9 @@ type NativeShape = {
   getAppIcon(packageName: string): Promise<string | null>;
   getVersionInfo(): Promise<VersionInfo>;
   installUpdate(url: string): Promise<InstallResult>;
+  getGameStats(): Promise<Record<string, GameStat>>;
+  freeRam(): Promise<FreeRamResult>;
+  clearCaches(): Promise<ClearCacheResult>;
 };
 
 const native: NativeShape | undefined =
@@ -235,6 +256,23 @@ export const CantosHub = {
   async installUpdate(url: string): Promise<InstallResult> {
     if (!native) return 'INSTALLING';
     return native.installUpdate(url);
+  },
+
+  async getGameStats(): Promise<Record<string, GameStat>> {
+    if (!native) return {};
+    return native.getGameStats();
+  },
+
+  async freeRam(): Promise<FreeRamResult> {
+    if (!native) {
+      return { freedBytes: 0, targeted: 0, availMem: 0, totalMem: 0 };
+    }
+    return native.freeRam();
+  },
+
+  async clearCaches(): Promise<ClearCacheResult> {
+    if (!native) return { ownFreedBytes: 0, systemTrim: false };
+    return native.clearCaches();
   },
 };
 

@@ -39,6 +39,8 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   const [refreshing, setRefreshing] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [dlProgress, setDlProgress] = useState(0);
+  const [cleaning, setCleaning] = useState<null | 'ram' | 'cache'>(null);
+  const [cleanMsg, setCleanMsg] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -97,6 +99,44 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
     setRefreshing(false);
   }, [loadTelemetry, store]);
 
+  const onFreeRam = useCallback(async () => {
+    setCleaning('ram');
+    setCleanMsg(null);
+    try {
+      const r = await CantosHub.freeRam();
+      const freedMb = Math.round(r.freedBytes / 1048576);
+      const freeGb = (r.availMem / 1073741824).toFixed(1);
+      setCleanMsg(
+        freedMb > 0
+          ? `Cleared ${r.targeted} apps · freed ~${freedMb} MB · ${freeGb} GB free`
+          : `Cleared background in ${r.targeted} apps · ${freeGb} GB free`,
+      );
+    } catch {
+      setCleanMsg('Could not free RAM.');
+    } finally {
+      setCleaning(null);
+      loadTelemetry();
+    }
+  }, [loadTelemetry]);
+
+  const onClearCache = useCallback(async () => {
+    setCleaning('cache');
+    setCleanMsg(null);
+    try {
+      const r = await CantosHub.clearCaches();
+      const own = (r.ownFreedBytes / 1048576).toFixed(1);
+      setCleanMsg(
+        r.systemTrim
+          ? `System-wide cache trimmed (Shizuku) · app cache ${own} MB`
+          : `App cache cleared (${own} MB). System-wide clearing needs Shizuku.`,
+      );
+    } catch {
+      setCleanMsg('Could not clear cache.');
+    } finally {
+      setCleaning(null);
+    }
+  }, []);
+
   const therm = thermalLabel(telemetry?.thermalStatus ?? -1);
   const usedMem = telemetry ? telemetry.totalMem - telemetry.availMem : 0;
 
@@ -139,13 +179,15 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
         </View>
       )}
 
-      {/* Master boost control */}
+      {/* Master boost control — tap to toggle */}
       <Pressable
         onPress={onMaster}
         disabled={busy}
-        style={[styles.master, boostRunning && styles.masterOn]}>
+        style={[styles.master, boostRunning && styles.masterOn, busy && styles.masterBusy]}>
         <Text style={[styles.masterTitle, boostRunning && styles.masterTitleOn]}>
-          {boostRunning
+          {busy
+            ? 'WORKING…'
+            : boostRunning
             ? autoMode
               ? 'AUTO BOOST ON'
               : 'BOOST ACTIVE'
@@ -154,17 +196,13 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
             : 'START BOOST'}
         </Text>
         <Text style={styles.masterProfile}>
-          {autoMode ? 'Auto-applies a profile per game' : `Profile: ${activeProfile.name}`}
+          {boostRunning
+            ? 'Tap to stop'
+            : autoMode
+            ? 'Auto-applies a profile per game'
+            : `Profile: ${activeProfile.name}`}
         </Text>
       </Pressable>
-      <View style={{ height: spacing.lg }}>
-        <PrimaryButton
-          title={boostRunning ? 'Stop boost' : autoMode ? 'Start auto boost' : 'Start boost'}
-          onPress={onMaster}
-          busy={busy}
-          variant={boostRunning ? 'danger' : 'solid'}
-        />
-      </View>
 
       {/* Mode */}
       <SectionCard title="Mode">
@@ -189,6 +227,28 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
         {boostRunning && (
           <Text style={styles.modeHint}>Stop & start a boost to apply mode changes.</Text>
         )}
+      </SectionCard>
+
+      {/* Free up memory */}
+      <SectionCard title="Free up">
+        <Text style={styles.freeDesc}>
+          Kill background apps to give your game more RAM. Android may relaunch them
+          later — best used right before you play.
+        </Text>
+        <View style={styles.freeRow}>
+          <View style={styles.freeBtn}>
+            <PrimaryButton title="Free RAM" onPress={onFreeRam} busy={cleaning === 'ram'} />
+          </View>
+          <View style={styles.freeBtn}>
+            <PrimaryButton
+              title="Clear cache"
+              variant="outline"
+              onPress={onClearCache}
+              busy={cleaning === 'cache'}
+            />
+          </View>
+        </View>
+        {!!cleanMsg && <Text style={styles.freeMsg}>{cleanMsg}</Text>}
       </SectionCard>
 
       {/* Live telemetry */}
@@ -293,18 +353,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     paddingVertical: spacing.xl,
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   masterOn: {
     borderColor: colors.accent,
     backgroundColor: 'rgba(0,229,160,0.08)',
   },
+  masterBusy: { opacity: 0.6 },
   masterTitle: { color: colors.textDim, fontSize: 22, fontWeight: '900', letterSpacing: 1 },
   masterTitleOn: { color: colors.accent },
   masterProfile: { color: colors.textDim, fontSize: 13, marginTop: 6 },
   statGrid: { flexDirection: 'row', gap: spacing.md },
   warnLine: { color: colors.warn, fontSize: 12, marginTop: spacing.md },
   modeHint: { color: colors.textDim, fontSize: 12, marginTop: spacing.sm },
+  freeDesc: { color: colors.textDim, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
+  freeRow: { flexDirection: 'row', gap: spacing.md },
+  freeBtn: { flex: 1 },
+  freeMsg: { color: colors.accent, fontSize: 13, marginTop: spacing.md, lineHeight: 18 },
   link: { color: colors.accent2, fontWeight: '700', fontSize: 13 },
   footnote: {
     color: colors.textDim,

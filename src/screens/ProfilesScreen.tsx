@@ -50,7 +50,8 @@ export default function ProfilesScreen() {
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Profiles</Text>
       <Text style={styles.sub}>
-        Save toggle presets per game or mode. Auto-apply by game comes in a later phase.
+        Save presets per game or mode. Bind a game below and Auto mode applies it the moment
+        that game opens.
       </Text>
 
       {store.profiles.map(p => (

@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import { Badge, PrimaryButton, SectionCard } from '../components/ui';
-import { CantosHub, GameInfo } from '../native/CantosHub';
+import { CantosHub, GameInfo, GameStat } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, radius, spacing } from '../theme';
 
@@ -71,6 +71,7 @@ function AppIcon({ packageName, label }: { packageName: string; label: string })
 export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: () => void }) {
   const store = useStore();
   const [games, setGames] = useState<GameInfo[]>([]);
+  const [stats, setStats] = useState<Record<string, GameStat>>({});
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
   const [assignFor, setAssignFor] = useState<GameInfo | null>(null);
@@ -78,6 +79,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
   const load = useCallback(async (all: boolean) => {
     setLoading(true);
     try {
+      CantosHub.getGameStats().then(setStats).catch(() => {});
       if (all) {
         const apps = await CantosHub.listInstalledApps();
         setGames(apps.map(a => ({ ...a, totalTimeMs: 0 })));
@@ -143,6 +145,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
         ) : (
           sorted.map(g => {
             const profile = store.profiles.find(p => p.packageName === g.packageName);
+            const st = stats[g.packageName];
             return (
               <View key={g.packageName} style={styles.gameCard}>
                 <View style={styles.gameTop}>
@@ -152,6 +155,12 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                       {g.label}
                     </Text>
                     <Text style={styles.gameMeta}>Playtime (7d): {fmtTime(g.totalTimeMs)}</Text>
+                    {!!st && st.sessions > 0 && (
+                      <Text style={styles.gameMeta}>
+                        {st.sessions} boost{st.sessions === 1 ? '' : 's'}
+                        {st.avgFps > 0 ? ` · ~${st.avgFps} fps avg` : ''}
+                      </Text>
+                    )}
                     <Text style={[styles.gameMeta, profile ? styles.boundOn : null]}>
                       {profile ? `Profile: ${profile.name}` : 'No profile bound'}
                     </Text>

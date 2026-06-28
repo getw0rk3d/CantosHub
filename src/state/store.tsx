@@ -15,6 +15,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { CHANGELOG } from '../changelog';
 import {
   BoostProfile,
   CantosHub,
@@ -24,6 +25,7 @@ import {
 } from '../native/CantosHub';
 
 const STORAGE_KEY = 'cantoshub_state_v1';
+const LAST_SEEN_KEY = 'cantoshub_last_seen_code';
 const VERSIONS_URL =
   'https://raw.githubusercontent.com/getw0rk3d/CantosHub/main/versions.json';
 
@@ -32,6 +34,11 @@ export type UpdateState = {
   versionName?: string;
   apkUrl?: string;
   notes?: string;
+};
+
+export type WhatsNew = {
+  versionName: string;
+  notes: string;
 };
 
 export type ToggleKey = 'dnd' | 'peakRefreshRate' | 'keepAwake' | 'maxBrightness';
@@ -96,6 +103,9 @@ type Store = {
   checkForUpdate: () => Promise<void>;
   installUpdate: () => Promise<void>;
 
+  whatsNew: WhatsNew | null;
+  dismissWhatsNew: () => void;
+
   boostRunning: boolean;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
@@ -113,6 +123,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [autoMode, setAutoMode] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [update, setUpdate] = useState<UpdateState | null>(null);
+  const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -181,6 +192,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const u = updateRef.current;
     if (u?.apkUrl) await CantosHub.installUpdate(u.apkUrl);
   }, []);
+
+  const dismissWhatsNew = useCallback(() => setWhatsNew(null), []);
 
   const updateProfile = useCallback(
     (id: string, patch: Partial<BoostProfile>) => {
@@ -301,6 +314,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     checkForUpdate();
   }, [refreshPermissions, refreshShizuku, checkForUpdate]);
 
+  // After an update installs, show "What's new" once for the new version.
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await CantosHub.getVersionInfo();
+        const raw = await AsyncStorage.getItem(LAST_SEEN_KEY);
+        const lastSeen = raw ? parseInt(raw, 10) : null;
+        if (lastSeen != null && info.versionCode > lastSeen && CHANGELOG[info.versionName]) {
+          setWhatsNew({ versionName: info.versionName, notes: CHANGELOG[info.versionName] });
+        }
+        await AsyncStorage.setItem(LAST_SEEN_KEY, String(info.versionCode));
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
   // Hydrate persisted profiles + settings once.
   useEffect(() => {
     let cancelled = false;
@@ -364,6 +394,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     update,
     checkForUpdate,
     installUpdate,
+    whatsNew,
+    dismissWhatsNew,
     boostRunning,
     startBoost,
     stopBoost,

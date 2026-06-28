@@ -39,7 +39,7 @@ const PERMISSIONS: { key: PermissionKey; label: string; why: string }[] = [
   {
     key: 'overlay',
     label: 'Display over other apps',
-    why: 'For the live FPS / temperature overlay on top of games (coming soon).',
+    why: 'For the live FPS / battery / RAM overlay on top of your game.',
   },
 ];
 
@@ -106,10 +106,10 @@ export default function PermissionsScreen() {
           ) : undefined
         }>
         <Text style={styles.note}>
-          <Text style={styles.bold}>Shizuku</Text> grants CantosHub ADB-level powers
-          (per-game resolution scaling, freezing background apps) with{' '}
-          <Text style={styles.bold}>still no root</Text> — you authorize it once and stay
-          in control.
+          <Text style={styles.bold}>Optional.</Text> Everything else — boost, Auto by game,
+          Free RAM, the overlay — works without it. <Text style={styles.bold}>Shizuku</Text>{' '}
+          only adds Pro extras (per-game resolution scaling, freezing apps, system-wide cache
+          trim) with <Text style={styles.bold}>still no root</Text>.
         </Text>
 
         {shizuku?.granted ? (
@@ -122,8 +122,11 @@ export default function PermissionsScreen() {
           </View>
         ) : (
           <View style={{ marginTop: spacing.sm }}>
-            <Text style={styles.note}>To enable (one time, no root):</Text>
-            <Text style={styles.step}>1. Install the Shizuku app from the Play Store.</Text>
+            <Text style={styles.note}>Optional — to enable (one time, no root):</Text>
+            <Text style={styles.step}>
+              1. Get Shizuku from GitHub (RikkaApps/Shizuku) or F-Droid — the Play Store build
+              is outdated and often won't install.
+            </Text>
             <Text style={styles.step}>
               2. Start it via wireless debugging (Shizuku walks you through it) or a PC over ADB.
             </Text>

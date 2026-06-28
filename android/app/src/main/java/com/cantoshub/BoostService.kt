@@ -87,6 +87,8 @@ class BoostService : Service() {
     startForegroundCompat(buildNotification("Boost active", "Profile: $appliedProfileName"))
     isRunning = true
     try { BoostActions.applyProfile(this, profile) } catch (e: Exception) { }
+    val pkg = profile.optString("packageName", "")
+    if (pkg.isNotBlank()) StatsStore.recordSession(this, pkg)
     startOverlayIfNeeded()
     if (showOverlay) startWorker()
   }
@@ -149,6 +151,7 @@ class BoostService : Service() {
       }
       appliedPackage = matchPkg
       appliedProfileName = match.optString("name", "Boost")
+      if (matchPkg != null) StatsStore.recordSession(this, matchPkg)
       updateNotification("Auto boost", "Active: $appliedProfileName")
     } else {
       appliedPackage = null
@@ -236,7 +239,10 @@ class BoostService : Service() {
       if (frames >= 0) {
         if (pkg == lastFpsPkg && lastFrames in 0..frames && lastFramesAt > 0L) {
           val dt = (now - lastFramesAt) / 1000.0
-          if (dt > 0.3) currentFps = ((frames - lastFrames) / dt).roundToInt()
+          if (dt > 0.3) {
+            currentFps = ((frames - lastFrames) / dt).roundToInt()
+            StatsStore.recordFps(this, pkg, currentFps)
+          }
         } else {
           currentFps = -1
         }

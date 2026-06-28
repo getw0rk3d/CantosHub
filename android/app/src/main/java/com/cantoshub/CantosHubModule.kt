@@ -25,6 +25,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.io.ByteArrayOutputStream
+import kotlin.math.roundToInt
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
 
@@ -342,6 +343,117 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     } catch (e: Exception) {
       promise.reject("LIST_GAMES_ERR", e)
     }
+  }
+
+  @ReactMethod
+  fun getGameStats(promise: Promise) {
+    try {
+      val root = JSONObject(StatsStore.asJson(ctx))
+      val m = Arguments.createMap()
+      val keys = root.keys()
+      while (keys.hasNext()) {
+        val pkg = keys.next()
+        val o = root.getJSONObject(pkg)
+        val fpsCount = o.optInt("fpsCount", 0)
+        val fpsSum = o.optDouble("fpsSum", 0.0)
+        val stat = Arguments.createMap()
+        stat.putInt("sessions", o.optInt("sessions", 0))
+        stat.putInt("samples", fpsCount)
+        stat.putInt("avgFps", if (fpsCount > 0) (fpsSum / fpsCount).roundToInt() else 0)
+        m.putMap(pkg, stat)
+      }
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.reject("STATS_ERR", e)
+    }
+  }
+
+  // --- Cleanup: free RAM (no-root) + clear caches ---
+  /**
+   * Kills killable background processes of user apps to reclaim RAM. No root, no
+   * Shizuku — uses KILL_BACKGROUND_PROCESSES. Android may relaunch apps later, so
+   * the headroom is temporary; we report the actual availMem delta, not a guess.
+   */
+  @ReactMethod
+  fun freeRam(promise: Promise) {
+    Thread {
+      try {
+        val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val mi = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mi)
+        val before = mi.availMem
+        val mine = ctx.packageName
+        val fg = currentForegroundApp()
+        val pm = ctx.packageManager
+        val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val seen = HashSet<String>()
+        var targeted = 0
+        for (ri in pm.queryIntentActivities(launchable, 0)) {
+          val p = ri.activityInfo.packageName
+          if (p == mine || p == fg || !seen.add(p)) continue
+          try {
+            am.killBackgroundProcesses(p)
+            targeted++
+          } catch (e: Exception) {
+          }
+        }
+        Thread.sleep(1000)
+        am.getMemoryInfo(mi)
+        val after = mi.availMem
+        val m = Arguments.createMap()
+        m.putDouble("freedBytes", (after - before).coerceAtLeast(0L).toDouble())
+        m.putInt("targeted", targeted)
+        m.putDouble("availMem", after.toDouble())
+        m.putDouble("totalMem", mi.totalMem.toDouble())
+        promise.resolve(m)
+      } catch (e: Exception) {
+        promise.reject("FREE_RAM_ERR", e)
+      }
+    }.start()
+  }
+
+  /**
+   * Clears CantosHub's own cache always; with Shizuku, also trims every app's
+   * cache system-wide (`pm trim-caches`). Without Shizuku, other apps' caches
+   * can't be touched without root, so only our own is cleared.
+   */
+  @ReactMethod
+  fun clearCaches(promise: Promise) {
+    Thread {
+      try {
+        var freed = deleteDirContents(ctx.cacheDir)
+        ctx.externalCacheDir?.let { freed += deleteDirContents(it) }
+        var systemTrim = false
+        if (ShizukuManager.hasPermission()) {
+          val latch = java.util.concurrent.CountDownLatch(1)
+          ShizukuManager.exec(ctx, listOf("pm", "trim-caches", "9999999999999")) { latch.countDown() }
+          latch.await(8, java.util.concurrent.TimeUnit.SECONDS)
+          systemTrim = true
+        }
+        val m = Arguments.createMap()
+        m.putDouble("ownFreedBytes", freed.toDouble())
+        m.putBoolean("systemTrim", systemTrim)
+        promise.resolve(m)
+      } catch (e: Exception) {
+        promise.reject("CLEAR_CACHE_ERR", e)
+      }
+    }.start()
+  }
+
+  private fun deleteDirContents(dir: java.io.File): Long {
+    val files = dir.listFiles() ?: return 0L
+    var total = 0L
+    for (f in files) {
+      total += if (f.isDirectory) {
+        val sub = deleteDirContents(f)
+        f.delete()
+        sub
+      } else {
+        val s = f.length()
+        if (f.delete()) s else 0L
+      }
+    }
+    return total
   }
 
   @ReactMethod

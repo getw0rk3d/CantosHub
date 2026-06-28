@@ -168,7 +168,20 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 </View>
                 <View style={styles.gameActions}>
                   <View style={styles.gameBtn}>
-                    <PrimaryButton title="Launch" onPress={() => CantosHub.launchApp(g.packageName)} />
+                    {profile ? (
+                      <PrimaryButton
+                        title="Boost & Play"
+                        onPress={async () => {
+                          await store.boostGame(profile);
+                          await CantosHub.launchApp(g.packageName);
+                        }}
+                      />
+                    ) : (
+                      <PrimaryButton
+                        title="Launch"
+                        onPress={() => CantosHub.launchApp(g.packageName)}
+                      />
+                    )}
                   </View>
                   <View style={styles.gameBtn}>
                     <PrimaryButton title="Assign" variant="outline" onPress={() => setAssignFor(g)} />

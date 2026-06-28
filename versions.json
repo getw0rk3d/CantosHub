@@ -1,6 +1,6 @@
 {
-  "versionCode": 6,
-  "versionName": "1.0.5",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.5/CantosHub-1.0.5.apk",
-  "notes": "Auto Free RAM on game launch, Wi-Fi low-latency lock, auto-refreshing permissions."
+  "versionCode": 7,
+  "versionName": "1.0.6",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.6/CantosHub-1.0.6.apk",
+  "notes": "Boost & Play — launch a game and start its boost in one tap."
 }

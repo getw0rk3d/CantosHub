@@ -112,6 +112,8 @@ type Store = {
   boostRunning: boolean;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
+  /** Start a manual boost using a specific profile (used by Games → Boost & Play). */
+  boostGame: (profile: BoostProfile) => Promise<void>;
   /** Flip one toggle on the active profile; applies live if boost is running. */
   toggle: (key: ToggleKey, value: boolean) => Promise<void>;
 };
@@ -298,6 +300,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setBoostRunning(false);
   }, []);
 
+  const boostGame = useCallback(async (profile: BoostProfile) => {
+    setActiveProfileId(profile.id);
+    await CantosHub.startBoost(profile, overlayRef.current, freeRamRef.current);
+    const usesShizuku =
+      (profile.resolutionScale ?? 1) < 1 || (profile.freezeApps?.length ?? 0) > 0;
+    if (shizukuRef.current?.granted && usesShizuku) {
+      try {
+        await CantosHub.applyShizukuProfile(profile);
+      } catch {
+        // best-effort
+      }
+    }
+    setBoostRunning(true);
+  }, []);
+
   const toggle = useCallback(
     async (key: ToggleKey, value: boolean) => {
       updateProfile(activeRef.current.id, { [key]: value });
@@ -422,6 +439,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     boostRunning,
     startBoost,
     stopBoost,
+    boostGame,
     toggle,
   };
 

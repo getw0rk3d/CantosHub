@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -13,10 +14,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Badge, PrimaryButton, SectionCard } from '../components/ui';
-import { CantosHub, GameInfo, GameStat } from '../native/CantosHub';
+import { CantosHub, GameInfo, GameStat, ShortcutSpec } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, radius, spacing } from '../theme';
 
@@ -75,6 +77,11 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
   const [assignFor, setAssignFor] = useState<GameInfo | null>(null);
+  const [moreFor, setMoreFor] = useState<GameInfo | null>(null);
+  const [folderFor, setFolderFor] = useState<GameInfo | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string>('all');
+  const [newFolder, setNewFolder] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
 
   const load = useCallback(async (all: boolean) => {
     setLoading(true);
@@ -97,7 +104,25 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const sorted = [...games].sort((a, b) => b.totalTimeMs - a.totalTimeMs || a.label.localeCompare(b.label));
+  // Keep the app-icon long-press shortcuts in sync with bound games.
+  useEffect(() => {
+    const specs: ShortcutSpec[] = store.profiles
+      .filter(p => p.packageName)
+      .slice(0, 4)
+      .map(p => ({
+        id: `boost_${p.packageName}`,
+        label: games.find(g => g.packageName === p.packageName)?.label || p.name,
+        packageName: p.packageName as string,
+        profile: p,
+      }));
+    CantosHub.setGameShortcuts(specs).catch(() => {});
+  }, [store.profiles, games]);
+
+  const sorted = [...games].sort(
+    (a, b) => b.totalTimeMs - a.totalTimeMs || a.label.localeCompare(b.label),
+  );
+  const folder = store.folders.find(f => f.id === selectedFolder);
+  const visible = folder ? sorted.filter(g => folder.packages.includes(g.packageName)) : sorted;
   const usageOff = !!store.permissions && !store.permissions.usageAccess;
 
   return (
@@ -125,25 +150,64 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
           </Pressable>
         )}
 
+        {!showAll && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chips}
+            contentContainerStyle={styles.chipsRow}>
+            <Chip
+              label="All"
+              active={selectedFolder === 'all'}
+              onPress={() => setSelectedFolder('all')}
+            />
+            {store.folders.map(f => (
+              <Chip
+                key={f.id}
+                label={`${f.name} (${f.packages.length})`}
+                active={selectedFolder === f.id}
+                onPress={() => setSelectedFolder(f.id)}
+                onLongPress={() =>
+                  Alert.alert('Delete folder?', `Remove "${f.name}"?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: () => {
+                        store.deleteFolder(f.id);
+                        if (selectedFolder === f.id) setSelectedFolder('all');
+                      },
+                    },
+                  ])
+                }
+              />
+            ))}
+            <Chip label="+ New" active={false} onPress={() => setCreatingFolder(true)} />
+          </ScrollView>
+        )}
+
         {loading ? (
           <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
-        ) : sorted.length === 0 ? (
+        ) : visible.length === 0 ? (
           <SectionCard>
             <Text style={styles.empty}>
-              No games detected. Apps are tagged as games via their manifest — emulators
-              often have none.
+              {folder
+                ? 'No games in this folder yet — add some from a game’s “More” menu.'
+                : 'No games detected. Apps are tagged as games via their manifest — emulators often have none.'}
             </Text>
-            <PrimaryButton
-              title="Show all apps"
-              variant="outline"
-              onPress={() => {
-                setShowAll(true);
-                load(true);
-              }}
-            />
+            {!folder && (
+              <PrimaryButton
+                title="Show all apps"
+                variant="outline"
+                onPress={() => {
+                  setShowAll(true);
+                  load(true);
+                }}
+              />
+            )}
           </SectionCard>
         ) : (
-          sorted.map(g => {
+          visible.map(g => {
             const profile = store.profiles.find(p => p.packageName === g.packageName);
             const st = stats[g.packageName];
             return (
@@ -184,7 +248,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                     )}
                   </View>
                   <View style={styles.gameBtn}>
-                    <PrimaryButton title="Assign" variant="outline" onPress={() => setAssignFor(g)} />
+                    <PrimaryButton title="More" variant="outline" onPress={() => setMoreFor(g)} />
                   </View>
                 </View>
               </View>
@@ -208,7 +272,212 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
           setAssignFor(null);
         }}
       />
+
+      {/* Per-game "More" actions */}
+      <Modal visible={!!moreFor} transparent animationType="slide" onRequestClose={() => setMoreFor(null)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setMoreFor(null)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <Text style={styles.modalTitle}>{moreFor?.label}</Text>
+            <Text style={styles.modalSub}>{moreFor?.packageName}</Text>
+            <MoreItem
+              label="Assign profile"
+              onPress={() => {
+                const g = moreFor;
+                setMoreFor(null);
+                setAssignFor(g);
+              }}
+            />
+            <MoreItem
+              label="Add to folder"
+              onPress={() => {
+                const g = moreFor;
+                setMoreFor(null);
+                setFolderFor(g);
+              }}
+            />
+            <MoreItem
+              label="Pin “Boost & Play” to home screen"
+              onPress={async () => {
+                const g = moreFor;
+                setMoreFor(null);
+                if (!g) return;
+                const p =
+                  store.profiles.find(x => x.packageName === g.packageName) ?? store.activeProfile;
+                const ok = await CantosHub.pinGameShortcut({
+                  id: `boost_${g.packageName}`,
+                  label: g.label,
+                  packageName: g.packageName,
+                  profile: p,
+                });
+                if (!ok) {
+                  Alert.alert('Not supported', 'Your launcher didn’t accept the pin request.');
+                }
+              }}
+            />
+            <MoreItem
+              label="Set as Quick-tile favorite"
+              onPress={async () => {
+                const g = moreFor;
+                setMoreFor(null);
+                if (!g) return;
+                const p =
+                  store.profiles.find(x => x.packageName === g.packageName) ?? store.activeProfile;
+                await CantosHub.setQuickTileProfile(p);
+                await CantosHub.requestAddTile();
+              }}
+            />
+            <MoreItem
+              label="Uninstall game"
+              danger
+              onPress={() => {
+                const g = moreFor;
+                setMoreFor(null);
+                if (!g) return;
+                Alert.alert('Uninstall', `Uninstall ${g.label}?`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Uninstall',
+                    style: 'destructive',
+                    onPress: () => CantosHub.uninstallApp(g.packageName),
+                  },
+                ]);
+              }}
+            />
+            <View style={{ marginTop: spacing.sm }}>
+              <PrimaryButton title="Close" variant="outline" onPress={() => setMoreFor(null)} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Add-to-folder picker */}
+      <Modal visible={!!folderFor} transparent animationType="slide" onRequestClose={() => setFolderFor(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Add to folder</Text>
+            <Text style={styles.modalSub}>{folderFor?.label}</Text>
+            <FlatList
+              data={store.folders}
+              keyExtractor={f => f.id}
+              style={styles.modalList}
+              ListEmptyComponent={
+                <Text style={styles.modalSub}>No folders yet — create one below.</Text>
+              }
+              renderItem={({ item }) => {
+                const inF = !!folderFor && item.packages.includes(folderFor.packageName);
+                return (
+                  <Pressable
+                    style={styles.profRow}
+                    onPress={() =>
+                      folderFor && store.toggleGameInFolder(item.id, folderFor.packageName)
+                    }>
+                    <Text style={styles.profName}>{item.name}</Text>
+                    <View style={[styles.check, inF && styles.checkOn]}>
+                      {inF && <Text style={styles.checkMark}>✓</Text>}
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+            <View style={styles.modalActions}>
+              <View style={styles.modalBtn}>
+                <PrimaryButton
+                  title="New folder"
+                  variant="outline"
+                  onPress={() => {
+                    setFolderFor(null);
+                    setCreatingFolder(true);
+                  }}
+                />
+              </View>
+              <View style={styles.modalBtn}>
+                <PrimaryButton title="Done" onPress={() => setFolderFor(null)} />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* New folder */}
+      <Modal
+        visible={creatingFolder}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCreatingFolder(false)}>
+        <View style={[styles.modalBackdrop, styles.centerBackdrop]}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>New folder</Text>
+            <TextInput
+              value={newFolder}
+              onChangeText={setNewFolder}
+              placeholder="e.g. Shooters, RPGs…"
+              placeholderTextColor={colors.textDim}
+              style={styles.input}
+            />
+            <View style={styles.modalActions}>
+              <View style={styles.modalBtn}>
+                <PrimaryButton
+                  title="Cancel"
+                  variant="outline"
+                  onPress={() => {
+                    setCreatingFolder(false);
+                    setNewFolder('');
+                  }}
+                />
+              </View>
+              <View style={styles.modalBtn}>
+                <PrimaryButton
+                  title="Create"
+                  onPress={() => {
+                    const id = store.addFolder(newFolder);
+                    setSelectedFolder(id);
+                    setNewFolder('');
+                    setCreatingFolder(false);
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
+  );
+}
+
+function Chip({
+  label,
+  active,
+  onPress,
+  onLongPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[styles.chip, active && styles.chipOn]}>
+      <Text style={[styles.chipText, active && styles.chipTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function MoreItem({
+  label,
+  onPress,
+  danger,
+}: {
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <Pressable style={styles.moreItem} onPress={onPress} android_ripple={{ color: colors.border }}>
+      <Text style={[styles.moreItemText, danger ? { color: colors.danger } : null]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -300,6 +569,7 @@ const styles = StyleSheet.create({
   gameBtn: { flex: 1 },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  centerBackdrop: { justifyContent: 'center', padding: spacing.xl },
   modalSheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.lg,
@@ -322,4 +592,44 @@ const styles = StyleSheet.create({
   link: { color: colors.accent2, fontWeight: '700', fontSize: 13 },
   modalActions: { flexDirection: 'row', marginTop: spacing.md, gap: spacing.md },
   modalBtn: { flex: 1 },
+
+  chips: { marginBottom: spacing.md },
+  chipsRow: { gap: spacing.sm, paddingRight: spacing.lg },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.textDim, fontSize: 13, fontWeight: '700' },
+  chipTextOn: { color: '#06140F' },
+
+  moreItem: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  moreItemText: { color: colors.text, fontSize: 15 },
+
+  check: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkMark: { color: '#06140F', fontWeight: '900' },
+
+  input: {
+    backgroundColor: colors.cardAlt,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.text,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    marginTop: spacing.md,
+  },
 });

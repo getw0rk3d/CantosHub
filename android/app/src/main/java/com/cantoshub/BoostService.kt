@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -342,11 +343,26 @@ class BoostService : Service() {
       @Suppress("DEPRECATION")
       Notification.Builder(this)
     }
+    val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    val stopPi = PendingIntent.getService(
+      this,
+      1,
+      Intent(this, BoostService::class.java).apply { action = ACTION_STOP },
+      piFlags,
+    )
+    val openPi = PendingIntent.getActivity(
+      this,
+      2,
+      Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+      piFlags,
+    )
     return builder
       .setContentTitle("CantosHub · $title")
       .setContentText(text)
-      .setSmallIcon(android.R.drawable.ic_media_play)
+      .setSmallIcon(R.drawable.ic_tile_boost)
       .setOngoing(true)
+      .setContentIntent(openPi)
+      .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop boost", stopPi)
       .build()
   }
 

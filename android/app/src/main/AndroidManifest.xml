@@ -88,5 +88,26 @@
             android:name="android.support.FILE_PROVIDER_PATHS"
             android:resource="@xml/file_paths" />
       </provider>
+
+      <!-- Invisible trampoline for home-screen / app-icon boost shortcuts -->
+      <activity
+          android:name=".BoostShortcutActivity"
+          android:exported="true"
+          android:theme="@android:style/Theme.Translucent.NoTitleBar"
+          android:excludeFromRecents="true"
+          android:taskAffinity=""
+          android:noHistory="true" />
+
+      <!-- Quick Settings tile -->
+      <service
+          android:name=".BoostTileService"
+          android:label="Game Boost"
+          android:icon="@drawable/ic_tile_boost"
+          android:exported="true"
+          android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+        <intent-filter>
+          <action android:name="android.service.quicksettings.action.QS_TILE" />
+        </intent-filter>
+      </service>
     </application>
 </manifest>

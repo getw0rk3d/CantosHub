@@ -119,6 +119,19 @@ type NativeShape = {
   getGameStats(): Promise<Record<string, GameStat>>;
   freeRam(): Promise<FreeRamResult>;
   clearCaches(): Promise<ClearCacheResult>;
+  uninstallApp(packageName: string): Promise<boolean>;
+  setQuickTileProfile(profileJson: string): Promise<boolean>;
+  requestAddTile(): Promise<boolean>;
+  setGameShortcuts(jsonArray: string): Promise<boolean>;
+  pinGameShortcut(json: string): Promise<boolean>;
+};
+
+/** One game's launcher shortcut spec (Boost & Play). */
+export type ShortcutSpec = {
+  id: string;
+  label: string;
+  packageName: string;
+  profile: BoostProfile;
 };
 
 const native: NativeShape | undefined =
@@ -282,6 +295,44 @@ export const CantosHub = {
   async clearCaches(): Promise<ClearCacheResult> {
     if (!native) return { ownFreedBytes: 0, systemTrim: false };
     return native.clearCaches();
+  },
+
+  async uninstallApp(packageName: string): Promise<boolean> {
+    if (!native) return true;
+    return native.uninstallApp(packageName);
+  },
+
+  async setQuickTileProfile(profile: BoostProfile): Promise<boolean> {
+    if (!native) return true;
+    return native.setQuickTileProfile(JSON.stringify(profile));
+  },
+
+  async requestAddTile(): Promise<boolean> {
+    if (!native) return false;
+    return native.requestAddTile();
+  },
+
+  async setGameShortcuts(items: ShortcutSpec[]): Promise<boolean> {
+    if (!native) return true;
+    const payload = items.map(s => ({
+      id: s.id,
+      label: s.label,
+      packageName: s.packageName,
+      profile: JSON.stringify(s.profile),
+    }));
+    return native.setGameShortcuts(JSON.stringify(payload));
+  },
+
+  async pinGameShortcut(spec: ShortcutSpec): Promise<boolean> {
+    if (!native) return false;
+    return native.pinGameShortcut(
+      JSON.stringify({
+        id: spec.id,
+        label: spec.label,
+        packageName: spec.packageName,
+        profile: JSON.stringify(spec.profile),
+      }),
+    );
   },
 };
 

@@ -1,6 +1,6 @@
 {
-  "versionCode": 7,
-  "versionName": "1.0.6",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.6/CantosHub-1.0.6.apk",
-  "notes": "Boost & Play — launch a game and start its boost in one tap."
+  "versionCode": 8,
+  "versionName": "1.0.7",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.7/CantosHub-1.0.7.apk",
+  "notes": "Quick Settings tile, home-screen/app-icon shortcuts, game folders, uninstall, notification stop."
 }

@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.0.7':
+    '• Quick Settings tile + home-screen & app-icon shortcuts to boost a game in one tap\n• Game folders to sort your library\n• Uninstall a game from its “More” menu\n• Stop the boost right from its notification',
   '1.0.6':
     '• Boost & Play — one tap in the Games tab launches a game and starts its profile’s boost together',
   '1.0.5':

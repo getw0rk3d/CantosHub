@@ -22,10 +22,15 @@ import android.provider.Settings
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executor
 import kotlin.math.roundToInt
+import org.json.JSONArray
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
 
@@ -426,6 +431,106 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         promise.reject("CLEAR_CACHE_ERR", e)
       }
     }.start()
+  }
+
+  // --- Library extras: uninstall, quick tile, shortcuts ---
+  @ReactMethod
+  fun uninstallApp(packageName: String, promise: Promise) {
+    try {
+      val i = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      ctx.startActivity(i)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("UNINSTALL_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun setQuickTileProfile(profileJson: String, promise: Promise) {
+    try {
+      QuickPrefs.setFavorite(ctx, profileJson)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("QUICK_ERR", e)
+    }
+  }
+
+  /** Prompt the user to add the CantosHub Quick Settings tile (Android 13+). */
+  @ReactMethod
+  fun requestAddTile(promise: Promise) {
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val sbm = ctx.getSystemService(android.app.StatusBarManager::class.java)
+        val exec = Executor { it.run() }
+        sbm.requestAddTileService(
+          android.content.ComponentName(ctx, BoostTileService::class.java),
+          "Game Boost",
+          android.graphics.drawable.Icon.createWithResource(ctx, R.drawable.ic_tile_boost),
+          exec,
+        ) { }
+        promise.resolve(true)
+      } else {
+        promise.resolve(false)
+      }
+    } catch (e: Exception) {
+      promise.reject("ADD_TILE_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun setGameShortcuts(jsonArray: String, promise: Promise) {
+    try {
+      val arr = JSONArray(jsonArray)
+      val list = ArrayList<ShortcutInfoCompat>()
+      for (i in 0 until minOf(arr.length(), 4)) {
+        list.add(buildShortcut(arr.getJSONObject(i)))
+      }
+      ShortcutManagerCompat.setDynamicShortcuts(ctx, list)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("SHORTCUTS_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun pinGameShortcut(json: String, promise: Promise) {
+    try {
+      if (!ShortcutManagerCompat.isRequestPinShortcutSupported(ctx)) {
+        promise.resolve(false)
+        return
+      }
+      val ok = ShortcutManagerCompat.requestPinShortcut(ctx, buildShortcut(JSONObject(json)), null)
+      promise.resolve(ok)
+    } catch (e: Exception) {
+      promise.reject("PIN_ERR", e)
+    }
+  }
+
+  private fun buildShortcut(o: JSONObject): ShortcutInfoCompat {
+    val id = o.optString("id", "boost")
+    val label = o.optString("label", "Boost")
+    val pkg = o.optString("packageName", "")
+    val profile = o.optString("profile", "{}")
+    val intent = Intent(ctx, BoostShortcutActivity::class.java).apply {
+      action = Intent.ACTION_VIEW
+      putExtra(BoostShortcutActivity.EXTRA_PROFILE, profile)
+      putExtra(BoostShortcutActivity.EXTRA_LAUNCH_PKG, pkg)
+    }
+    return ShortcutInfoCompat.Builder(ctx, id)
+      .setShortLabel(label)
+      .setLongLabel("Boost & Play $label")
+      .setIcon(shortcutIcon(pkg))
+      .setIntent(intent)
+      .build()
+  }
+
+  private fun shortcutIcon(pkg: String): IconCompat {
+    return try {
+      IconCompat.createWithBitmap(drawableToBitmap(ctx.packageManager.getApplicationIcon(pkg), 144))
+    } catch (e: Exception) {
+      IconCompat.createWithResource(ctx, R.drawable.ic_tile_boost)
+    }
   }
 
   private fun deleteDirContents(dir: java.io.File): Long {

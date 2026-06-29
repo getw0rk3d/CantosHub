@@ -42,6 +42,12 @@ export type WhatsNew = {
   notes: string;
 };
 
+export type Folder = {
+  id: string;
+  name: string;
+  packages: string[];
+};
+
 export type ToggleKey = 'dnd' | 'peakRefreshRate' | 'keepAwake' | 'maxBrightness';
 
 const DEFAULT_PROFILES: BoostProfile[] = [
@@ -88,6 +94,11 @@ type Store = {
   /** Bind a game to a profile (and unbind it from any other profile). */
   assignGameToProfile: (profileId: string, packageName: string) => void;
 
+  folders: Folder[];
+  addFolder: (name: string) => string;
+  deleteFolder: (id: string) => void;
+  toggleGameInFolder: (folderId: string, packageName: string) => void;
+
   permissions: PermissionStatus | null;
   refreshPermissions: () => Promise<void>;
 
@@ -128,6 +139,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [autoMode, setAutoMode] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [freeRamOnBoost, setFreeRamOnBoost] = useState(true);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
@@ -235,6 +247,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (p.id === profileId) return { ...p, packageName };
         if (p.packageName === packageName) return { ...p, packageName: undefined };
         return p;
+      }),
+    );
+  }, []);
+
+  const addFolder = useCallback((name: string): string => {
+    const id = `folder_${Date.now()}`;
+    setFolders(prev => [
+      ...prev,
+      { id, name: name.trim() || `Folder ${prev.length + 1}`, packages: [] },
+    ]);
+    return id;
+  }, []);
+
+  const deleteFolder = useCallback((id: string) => {
+    setFolders(prev => prev.filter(f => f.id !== id));
+  }, []);
+
+  const toggleGameInFolder = useCallback((folderId: string, packageName: string) => {
+    setFolders(prev =>
+      prev.map(f => {
+        if (f.id !== folderId) return f;
+        const has = f.packages.includes(packageName);
+        return {
+          ...f,
+          packages: has
+            ? f.packages.filter(p => p !== packageName)
+            : [...f.packages, packageName],
+        };
       }),
     );
   }, []);
@@ -379,6 +419,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           autoMode: boolean;
           showOverlay: boolean;
           freeRamOnBoost: boolean;
+          folders: Folder[];
         }>;
         if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
           setProfiles(saved.profiles);
@@ -392,6 +433,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (typeof saved.autoMode === 'boolean') setAutoMode(saved.autoMode);
         if (typeof saved.showOverlay === 'boolean') setShowOverlay(saved.showOverlay);
         if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
+        if (Array.isArray(saved.folders)) setFolders(saved.folders);
       })
       .catch(() => {})
       .finally(() => {
@@ -407,9 +449,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost }),
+      JSON.stringify({
+        profiles,
+        activeProfileId,
+        autoMode,
+        showOverlay,
+        freeRamOnBoost,
+        folders,
+      }),
     ).catch(() => {});
-  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost]);
+  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost, folders]);
 
   const value: Store = {
     profiles,
@@ -420,6 +469,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addProfile,
     deleteProfile,
     assignGameToProfile,
+    folders,
+    addFolder,
+    deleteFolder,
+    toggleGameInFolder,
     permissions,
     refreshPermissions,
     shizuku,

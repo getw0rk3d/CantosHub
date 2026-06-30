@@ -48,6 +48,11 @@ export type Folder = {
   packages: string[];
 };
 
+export type HiddenGame = {
+  packageName: string;
+  label: string;
+};
+
 export type ToggleKey = 'dnd' | 'peakRefreshRate' | 'keepAwake' | 'maxBrightness';
 
 const DEFAULT_PROFILES: BoostProfile[] = [
@@ -99,6 +104,10 @@ type Store = {
   deleteFolder: (id: string) => void;
   toggleGameInFolder: (folderId: string, packageName: string) => void;
 
+  hiddenGames: HiddenGame[];
+  hideGame: (game: HiddenGame) => Promise<boolean>;
+  unhideGame: (packageName: string) => Promise<boolean>;
+
   permissions: PermissionStatus | null;
   refreshPermissions: () => Promise<void>;
 
@@ -140,6 +149,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [showOverlay, setShowOverlay] = useState(false);
   const [freeRamOnBoost, setFreeRamOnBoost] = useState(true);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [hiddenGames, setHiddenGames] = useState<HiddenGame[]>([]);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
@@ -277,6 +287,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     );
+  }, []);
+
+  const hideGame = useCallback(async (game: HiddenGame): Promise<boolean> => {
+    const ok = await CantosHub.hideApp(game.packageName);
+    if (ok) {
+      setHiddenGames(prev =>
+        prev.some(h => h.packageName === game.packageName)
+          ? prev
+          : [...prev, { packageName: game.packageName, label: game.label }],
+      );
+    }
+    return ok;
+  }, []);
+
+  const unhideGame = useCallback(async (packageName: string): Promise<boolean> => {
+    const ok = await CantosHub.unhideApp(packageName);
+    if (ok) setHiddenGames(prev => prev.filter(h => h.packageName !== packageName));
+    return ok;
   }, []);
 
   const deleteProfile = useCallback(
@@ -420,6 +448,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           showOverlay: boolean;
           freeRamOnBoost: boolean;
           folders: Folder[];
+          hiddenGames: HiddenGame[];
         }>;
         if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
           setProfiles(saved.profiles);
@@ -434,6 +463,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (typeof saved.showOverlay === 'boolean') setShowOverlay(saved.showOverlay);
         if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
         if (Array.isArray(saved.folders)) setFolders(saved.folders);
+        if (Array.isArray(saved.hiddenGames)) setHiddenGames(saved.hiddenGames);
       })
       .catch(() => {})
       .finally(() => {
@@ -456,9 +486,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         showOverlay,
         freeRamOnBoost,
         folders,
+        hiddenGames,
       }),
     ).catch(() => {});
-  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost, folders]);
+  }, [
+    hydrated,
+    profiles,
+    activeProfileId,
+    autoMode,
+    showOverlay,
+    freeRamOnBoost,
+    folders,
+    hiddenGames,
+  ]);
 
   const value: Store = {
     profiles,
@@ -473,6 +513,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addFolder,
     deleteFolder,
     toggleGameInFolder,
+    hiddenGames,
+    hideGame,
+    unhideGame,
     permissions,
     refreshPermissions,
     shizuku,

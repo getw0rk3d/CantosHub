@@ -92,8 +92,8 @@ android {
         applicationId "com.cantoshub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.0.7"
+        versionCode 9
+        versionName "1.0.8"
     }
     // AGP 8 disables AIDL by default; the Shizuku UserService needs it.
     buildFeatures {

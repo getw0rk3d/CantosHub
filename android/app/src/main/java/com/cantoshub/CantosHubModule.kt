@@ -446,6 +446,30 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /** Hide a game from the launcher via Shizuku (pm disable-user). No root. */
+  @ReactMethod
+  fun hideApp(packageName: String, promise: Promise) {
+    if (!ShizukuManager.hasPermission()) {
+      promise.resolve(false)
+      return
+    }
+    ShizukuManager.exec(ctx, listOf("pm", "disable-user", "--user", "0", packageName)) { out ->
+      promise.resolve(out != null && !out.startsWith("ERR"))
+    }
+  }
+
+  /** Re-enable a previously hidden game (pm enable). */
+  @ReactMethod
+  fun unhideApp(packageName: String, promise: Promise) {
+    if (!ShizukuManager.hasPermission()) {
+      promise.resolve(false)
+      return
+    }
+    ShizukuManager.exec(ctx, listOf("pm", "enable", packageName)) { out ->
+      promise.resolve(out != null && !out.startsWith("ERR"))
+    }
+  }
+
   @ReactMethod
   fun setQuickTileProfile(profileJson: String, promise: Promise) {
     try {

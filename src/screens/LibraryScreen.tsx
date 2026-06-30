@@ -118,7 +118,13 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
     CantosHub.setGameShortcuts(specs).catch(() => {});
   }, [store.profiles, games]);
 
-  const sorted = [...games].sort(
+  // Hidden games are disabled in the launcher, so they no longer appear in
+  // listGames — fold them back in from our saved list so they live in CantosHub.
+  const hiddenSet = new Set(store.hiddenGames.map(h => h.packageName));
+  const hiddenAsGames: GameInfo[] = store.hiddenGames
+    .filter(h => !games.some(g => g.packageName === h.packageName))
+    .map(h => ({ packageName: h.packageName, label: h.label, totalTimeMs: 0 }));
+  const sorted = [...games, ...hiddenAsGames].sort(
     (a, b) => b.totalTimeMs - a.totalTimeMs || a.label.localeCompare(b.label),
   );
   const folder = store.folders.find(f => f.id === selectedFolder);
@@ -210,14 +216,18 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
           visible.map(g => {
             const profile = store.profiles.find(p => p.packageName === g.packageName);
             const st = stats[g.packageName];
+            const hidden = hiddenSet.has(g.packageName);
             return (
               <View key={g.packageName} style={styles.gameCard}>
                 <View style={styles.gameTop}>
                   <AppIcon packageName={g.packageName} label={g.label} />
                   <View style={styles.gameText}>
-                    <Text style={styles.gameLabel} numberOfLines={1}>
-                      {g.label}
-                    </Text>
+                    <View style={styles.labelRow}>
+                      <Text style={styles.gameLabel} numberOfLines={1}>
+                        {g.label}
+                      </Text>
+                      {hidden && <Badge text="HIDDEN" color={colors.warn} />}
+                    </View>
                     <Text style={styles.gameMeta}>Playtime (7d): {fmtTime(g.totalTimeMs)}</Text>
                     {!!st && st.sessions > 0 && (
                       <Text style={styles.gameMeta}>
@@ -232,7 +242,16 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 </View>
                 <View style={styles.gameActions}>
                   <View style={styles.gameBtn}>
-                    {profile ? (
+                    {hidden ? (
+                      <PrimaryButton
+                        title="Unhide & Play"
+                        onPress={async () => {
+                          await store.unhideGame(g.packageName);
+                          if (profile) await store.boostGame(profile);
+                          await CantosHub.launchApp(g.packageName);
+                        }}
+                      />
+                    ) : profile ? (
                       <PrimaryButton
                         title="Boost & Play"
                         onPress={async () => {
@@ -326,6 +345,36 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 await CantosHub.requestAddTile();
               }}
             />
+            {moreFor && hiddenSet.has(moreFor.packageName) ? (
+              <MoreItem
+                label="Unhide (show in app drawer)"
+                onPress={async () => {
+                  const g = moreFor;
+                  setMoreFor(null);
+                  if (g) await store.unhideGame(g.packageName);
+                }}
+              />
+            ) : (
+              <MoreItem
+                label="Hide from app drawer"
+                onPress={async () => {
+                  const g = moreFor;
+                  setMoreFor(null);
+                  if (!g) return;
+                  if (!store.shizuku?.granted) {
+                    Alert.alert(
+                      'Needs Shizuku',
+                      'Hiding games from the app drawer needs Shizuku (no root). Authorize it in the Access tab, then try again.',
+                    );
+                    return;
+                  }
+                  const ok = await store.hideGame({ packageName: g.packageName, label: g.label });
+                  if (!ok) {
+                    Alert.alert('Could not hide', 'Shizuku didn’t complete the request.');
+                  }
+                }}
+              />
+            )}
             <MoreItem
               label="Uninstall game"
               danger
@@ -562,7 +611,8 @@ const styles = StyleSheet.create({
   avatar: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#06140F', fontSize: 22, fontWeight: '900' },
   gameText: { flex: 1, marginLeft: spacing.md },
-  gameLabel: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  gameLabel: { color: colors.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
   gameMeta: { color: colors.textDim, fontSize: 12, marginTop: 2 },
   boundOn: { color: colors.accent },
   gameActions: { flexDirection: 'row', marginTop: spacing.md, gap: spacing.md },

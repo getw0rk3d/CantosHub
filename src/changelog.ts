@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.0.8':
+    '• Hide games from your phone’s app drawer (Shizuku, no root) — they stay tucked inside CantosHub and re-enable when you play',
   '1.0.7':
     '• Quick Settings tile + home-screen & app-icon shortcuts to boost a game in one tap\n• Game folders to sort your library\n• Uninstall a game from its “More” menu\n• Stop the boost right from its notification',
   '1.0.6':

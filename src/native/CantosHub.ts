@@ -120,6 +120,8 @@ type NativeShape = {
   freeRam(): Promise<FreeRamResult>;
   clearCaches(): Promise<ClearCacheResult>;
   uninstallApp(packageName: string): Promise<boolean>;
+  hideApp(packageName: string): Promise<boolean>;
+  unhideApp(packageName: string): Promise<boolean>;
   setQuickTileProfile(profileJson: string): Promise<boolean>;
   requestAddTile(): Promise<boolean>;
   setGameShortcuts(jsonArray: string): Promise<boolean>;
@@ -300,6 +302,17 @@ export const CantosHub = {
   async uninstallApp(packageName: string): Promise<boolean> {
     if (!native) return true;
     return native.uninstallApp(packageName);
+  },
+
+  /** Hide a game from the launcher (Shizuku). Returns false if Shizuku isn't granted. */
+  async hideApp(packageName: string): Promise<boolean> {
+    if (!native) return false;
+    return native.hideApp(packageName);
+  },
+
+  async unhideApp(packageName: string): Promise<boolean> {
+    if (!native) return false;
+    return native.unhideApp(packageName);
   },
 
   async setQuickTileProfile(profile: BoostProfile): Promise<boolean> {

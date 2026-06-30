@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.0.7",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.7/CantosHub-1.0.7.apk",
-  "notes": "Quick Settings tile, home-screen/app-icon shortcuts, game folders, uninstall, notification stop."
+  "versionCode": 9,
+  "versionName": "1.0.8",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.8/CantosHub-1.0.8.apk",
+  "notes": "Hide games from the app drawer (Shizuku) — they stay in CantosHub."
 }

@@ -120,6 +120,7 @@ type NativeShape = {
   freeRam(): Promise<FreeRamResult>;
   clearCaches(): Promise<ClearCacheResult>;
   uninstallApp(packageName: string): Promise<boolean>;
+  openDevSettings(): Promise<boolean>;
   hideApp(packageName: string): Promise<boolean>;
   unhideApp(packageName: string): Promise<boolean>;
   setQuickTileProfile(profileJson: string): Promise<boolean>;
@@ -302,6 +303,12 @@ export const CantosHub = {
   async uninstallApp(packageName: string): Promise<boolean> {
     if (!native) return true;
     return native.uninstallApp(packageName);
+  },
+
+  /** Open Developer Options (for the in-app Shizuku / wireless-debugging setup). */
+  async openDevSettings(): Promise<boolean> {
+    if (!native) return true;
+    return native.openDevSettings();
   },
 
   /** Hide a game from the launcher (Shizuku). Returns false if Shizuku isn't granted. */

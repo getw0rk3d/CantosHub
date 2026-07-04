@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.1.0':
+    '• In-app Shizuku setup — live status, a one-tap shortcut to Wireless Debugging, and the full guide right inside the app (Access → Set up Shizuku). Fully in-app pairing (no separate app) is on the way.',
   '1.0.9':
     '• Bug fixes: no more Wi-Fi-lock or overlay leak when starting a boost while one is already running; hardened Shizuku command threading',
   '1.0.8':

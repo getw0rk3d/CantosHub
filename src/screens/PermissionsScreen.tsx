@@ -9,6 +9,7 @@ import { Badge, PrimaryButton, SectionCard, StatusDot } from '../components/ui';
 import { CantosHub, PermissionKey, VersionInfo } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
+import ShizukuSetup from './ShizukuSetup';
 
 const PERMISSIONS: { key: PermissionKey; label: string; why: string }[] = [
   {
@@ -49,6 +50,7 @@ export default function PermissionsScreen() {
 
   const { shizuku, update } = store;
   const [version, setVersion] = useState<VersionInfo | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
 
   useEffect(() => {
     store.refreshPermissions();
@@ -113,31 +115,12 @@ export default function PermissionsScreen() {
         </Text>
 
         {shizuku?.granted ? (
-          <Text style={[styles.note, { color: colors.accent, marginTop: spacing.sm }]}>
+          <Text style={[styles.note, styles.grantedNote]}>
             ✓ Connected — Pro options are unlocked in Profiles.
           </Text>
-        ) : shizuku?.available ? (
-          <View style={{ marginTop: spacing.md }}>
-            <PrimaryButton title="Authorize CantosHub" onPress={() => store.requestShizuku()} />
-          </View>
         ) : (
-          <View style={{ marginTop: spacing.sm }}>
-            <Text style={styles.note}>Optional — to enable (one time, no root):</Text>
-            <Text style={styles.step}>
-              1. Get Shizuku from GitHub (RikkaApps/Shizuku) or F-Droid — the Play Store build
-              is outdated and often won't install.
-            </Text>
-            <Text style={styles.step}>
-              2. Start it via wireless debugging (Shizuku walks you through it) or a PC over ADB.
-            </Text>
-            <Text style={styles.step}>3. Come back here and tap Authorize.</Text>
-            <View style={{ marginTop: spacing.md }}>
-              <PrimaryButton
-                title="Re-check Shizuku"
-                variant="outline"
-                onPress={() => store.refreshShizuku()}
-              />
-            </View>
+          <View style={styles.setupBtn}>
+            <PrimaryButton title="Set up Shizuku" onPress={() => setSetupOpen(true)} />
           </View>
         )}
       </SectionCard>
@@ -175,6 +158,8 @@ export default function PermissionsScreen() {
           </View>
         )}
       </SectionCard>
+
+      <ShizukuSetup visible={setupOpen} onClose={() => setSetupOpen(false)} />
     </ScrollView>
   );
 }
@@ -195,4 +180,6 @@ const styles = StyleSheet.create({
   note: { color: colors.textDim, fontSize: 13, lineHeight: 20 },
   step: { color: colors.textDim, fontSize: 13, lineHeight: 20, marginTop: 4 },
   bold: { color: colors.text, fontWeight: '700' },
+  grantedNote: { color: colors.accent, marginTop: spacing.sm },
+  setupBtn: { marginTop: spacing.md },
 });

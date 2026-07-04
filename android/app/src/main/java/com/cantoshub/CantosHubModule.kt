@@ -470,6 +470,26 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /** Opens Developer Options (where Wireless debugging lives) for in-app Shizuku setup. */
+  @ReactMethod
+  fun openDevSettings(promise: Promise) {
+    try {
+      val i = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      ctx.startActivity(i)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      try {
+        val fallback = Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(fallback)
+        promise.resolve(true)
+      } catch (e2: Exception) {
+        promise.reject("DEV_SETTINGS_ERR", e2)
+      }
+    }
+  }
+
   @ReactMethod
   fun setQuickTileProfile(profileJson: String, promise: Promise) {
     try {

@@ -446,6 +446,57 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /**
+   * Samsung's Game Optimizing Service (throttles games) + the Game Booster
+   * overlay. Blocking them (Shizuku, reversible) stops Samsung throttling and the
+   * pop-up panel so CantosHub is in charge.
+   */
+  private val samsungBooster = listOf(
+    "com.samsung.android.game.gos",
+    "com.samsung.android.game.gametools",
+  )
+
+  @ReactMethod
+  fun getGameBoosterStatus(promise: Promise) {
+    try {
+      val pm = ctx.packageManager
+      var present = false
+      var anyEnabled = false
+      for (p in samsungBooster) {
+        val setting = try {
+          pm.getApplicationEnabledSetting(p)
+        } catch (e: IllegalArgumentException) {
+          continue // not installed on this device
+        }
+        present = true
+        if (setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER &&
+          setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        ) {
+          anyEnabled = true
+        }
+      }
+      val m = Arguments.createMap()
+      m.putBoolean("present", present)
+      m.putBoolean("blocked", present && !anyEnabled)
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.reject("GB_STATUS_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun setGameBoosterBlocked(blocked: Boolean, promise: Promise) {
+    if (!ShizukuManager.hasPermission()) {
+      promise.resolve(false)
+      return
+    }
+    val op = if (blocked) "disable-user --user 0" else "enable --user 0"
+    val script = samsungBooster.joinToString("; ") { "pm $op $it" }
+    ShizukuManager.exec(ctx, listOf("sh", "-c", script)) { out ->
+      promise.resolve(out != null && !out.startsWith("ERR"))
+    }
+  }
+
   /** Hide a game from the launcher via Shizuku (pm disable-user). No root. */
   @ReactMethod
   fun hideApp(packageName: String, promise: Promise) {

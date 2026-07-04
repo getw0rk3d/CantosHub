@@ -1,6 +1,6 @@
 {
-  "versionCode": 11,
-  "versionName": "1.1.0",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.1.0/CantosHub-1.1.0.apk",
-  "notes": "In-app Shizuku setup screen (live status + Wireless Debugging shortcut + guide)."
+  "versionCode": 12,
+  "versionName": "1.2.0",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.0/CantosHub-1.2.0.apk",
+  "notes": "Block Samsung Game Booster (Shizuku) so it can't throttle games or pop up while you use CantosHub."
 }

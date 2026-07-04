@@ -25,8 +25,11 @@ class UserService() : IUserService.Stub() {
       val process = Runtime.getRuntime().exec(command.toTypedArray())
       val out = process.inputStream.bufferedReader().readText()
       val err = process.errorStream.bufferedReader().readText()
-      process.waitFor()
-      (out + err).trim()
+      val code = process.waitFor()
+      val combined = (out + err).trim()
+      // Non-zero exit = the command (e.g. `pm`) failed even though the JVM didn't
+      // throw. Prefix with ERR so callers (booster/hide/unhide) detect real failure.
+      if (code != 0) "ERR: $combined" else combined
     } catch (e: Exception) {
       "ERR: ${e.message}"
     }

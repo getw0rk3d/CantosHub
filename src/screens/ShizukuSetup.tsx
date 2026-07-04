@@ -7,7 +7,7 @@
  * tested together on-device.
  */
 import React, { useEffect } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Badge, PrimaryButton } from '../components/ui';
 import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
@@ -57,10 +57,11 @@ export default function ShizukuSetup({
           ) : (
             <>
               <Step n={1} title="Turn on Wireless debugging">
-                Open Developer Options and enable <Text style={styles.bold}>Wireless debugging</Text>.
-                (If you don't see Developer Options, open Settings → About phone and tap
-                Build number 7 times first.)
-                {'\n'}
+                <Text style={styles.stepText}>
+                  Open Developer Options and enable{' '}
+                  <Text style={styles.bold}>Wireless debugging</Text>. (If you don't see Developer
+                  Options, open Settings → About phone and tap Build number 7 times first.)
+                </Text>
                 <View style={styles.stepBtn}>
                   <PrimaryButton
                     title="Open Developer Options"
@@ -70,15 +71,34 @@ export default function ShizukuSetup({
               </Step>
 
               <Step n={2} title="Start Shizuku (one time)">
-                Until in-app pairing lands, install <Text style={styles.bold}>Shizuku</Text>{' '}
-                from GitHub (RikkaApps/Shizuku) or F-Droid and start it via Wireless debugging —
-                Shizuku walks you through the pairing. Do not use the Play Store build (it's
-                outdated).
+                <Text style={styles.stepText}>
+                  Until in-app pairing lands, install <Text style={styles.bold}>Shizuku</Text> from
+                  one of these and start it via Wireless debugging — Shizuku walks you through the
+                  pairing. Do not use the Play Store build (it's outdated).
+                </Text>
+                <View style={styles.stepBtn}>
+                  <PrimaryButton
+                    title="Get Shizuku (GitHub)"
+                    onPress={() =>
+                      Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
+                    }
+                  />
+                </View>
+                <View style={styles.stepBtn}>
+                  <PrimaryButton
+                    title="Get Shizuku (F-Droid)"
+                    variant="outline"
+                    onPress={() =>
+                      Linking.openURL('https://f-droid.org/packages/moe.shizuku.privileged.api/')
+                    }
+                  />
+                </View>
               </Step>
 
               <Step n={3} title="Authorize CantosHub">
-                Once Shizuku is running, tap Authorize below and allow CantosHub.
-                {'\n'}
+                <Text style={styles.stepText}>
+                  Once Shizuku is running, tap Authorize below and allow CantosHub.
+                </Text>
                 <View style={styles.stepBtn}>
                   <PrimaryButton
                     title={shizuku?.available ? 'Authorize CantosHub' : 'Re-check Shizuku'}
@@ -126,7 +146,7 @@ function Step({
         </View>
         <Text style={styles.stepTitle}>{title}</Text>
       </View>
-      <Text style={styles.stepBody}>{children}</Text>
+      <View style={styles.stepBody}>{children}</View>
     </View>
   );
 }
@@ -174,7 +194,8 @@ const styles = StyleSheet.create({
   },
   stepNumText: { color: '#06140F', fontWeight: '900' },
   stepTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  stepBody: { color: colors.textDim, fontSize: 14, lineHeight: 21 },
+  stepBody: {},
+  stepText: { color: colors.textDim, fontSize: 14, lineHeight: 21 },
   stepBtn: { marginTop: spacing.md },
 
   roadmap: {

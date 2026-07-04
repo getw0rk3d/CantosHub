@@ -41,6 +41,7 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   const [dlProgress, setDlProgress] = useState(0);
   const [cleaning, setCleaning] = useState<null | 'ram' | 'cache'>(null);
   const [cleanMsg, setCleanMsg] = useState<string | null>(null);
+  const [boosterMsg, setBoosterMsg] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -136,6 +137,23 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
       setCleaning(null);
     }
   }, []);
+
+  const onToggleBooster = useCallback(
+    async (v: boolean) => {
+      setBoosterMsg(null);
+      const ok = await store.blockGameBooster(v);
+      if (!ok) {
+        setBoosterMsg('Needs Shizuku to change this.');
+      } else {
+        setBoosterMsg(
+          v
+            ? 'Samsung Game Booster blocked — CantosHub is in charge.'
+            : 'Samsung Game Booster restored.',
+        );
+      }
+    },
+    [store],
+  );
 
   const therm = thermalLabel(telemetry?.thermalStatus ?? -1);
   const usedMem = telemetry ? telemetry.totalMem - telemetry.availMem : 0;
@@ -257,6 +275,31 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
           onValueChange={store.setFreeRamOnBoost}
         />
       </SectionCard>
+
+      {/* Samsung Game Booster (only on Samsung devices) */}
+      {store.gameBooster?.present && (
+        <SectionCard title="Samsung Game Booster">
+          <Text style={styles.freeDesc}>
+            Samsung's Game Booster throttles games and pops up its own panel. Block it so
+            CantosHub is in charge. Note: this also turns off Samsung's automatic thermal
+            management — keep an eye on the thermal readout above.
+          </Text>
+          <ToggleRow
+            label="Block Samsung Game Booster"
+            description={
+              store.gameBooster.blocked
+                ? 'Blocked — Samsung booster is off'
+                : 'Samsung booster is currently active'
+            }
+            value={store.gameBooster.blocked}
+            onValueChange={onToggleBooster}
+            locked={!store.shizuku?.granted}
+            lockedHint="Needs Shizuku (Access tab)"
+            onPressLocked={onGoPermissions}
+          />
+          {!!boosterMsg && <Text style={styles.freeMsg}>{boosterMsg}</Text>}
+        </SectionCard>
+      )}
 
       {/* Live telemetry */}
       <SectionCard title="Live status">

@@ -20,6 +20,7 @@ import { CHANGELOG } from '../changelog';
 import {
   BoostProfile,
   CantosHub,
+  GameBoosterStatus,
   PermissionStatus,
   ShizukuStatus,
   TOGGLE_PERMISSION,
@@ -115,6 +116,10 @@ type Store = {
   refreshShizuku: () => Promise<void>;
   requestShizuku: () => Promise<void>;
 
+  gameBooster: GameBoosterStatus | null;
+  refreshGameBooster: () => Promise<void>;
+  blockGameBooster: (blocked: boolean) => Promise<boolean>;
+
   autoMode: boolean;
   setAutoMode: (v: boolean) => void;
   showOverlay: boolean;
@@ -145,6 +150,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [activeProfileId, setActiveProfileId] = useState<string>('balanced');
   const [permissions, setPermissions] = useState<PermissionStatus | null>(null);
   const [shizuku, setShizuku] = useState<ShizukuStatus | null>(null);
+  const [gameBooster, setGameBooster] = useState<GameBoosterStatus | null>(null);
   const [autoMode, setAutoMode] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [freeRamOnBoost, setFreeRamOnBoost] = useState(true);
@@ -197,6 +203,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       await refreshShizuku();
     }
   }, [refreshShizuku]);
+
+  const refreshGameBooster = useCallback(async () => {
+    try {
+      setGameBooster(await CantosHub.getGameBoosterStatus());
+    } catch {
+      setGameBooster({ present: false, blocked: false });
+    }
+  }, []);
+
+  const blockGameBooster = useCallback(
+    async (blocked: boolean): Promise<boolean> => {
+      const ok = await CantosHub.setGameBoosterBlocked(blocked);
+      await refreshGameBooster();
+      return ok;
+    },
+    [refreshGameBooster],
+  );
 
   const checkForUpdate = useCallback(async () => {
     try {
@@ -403,20 +426,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     CantosHub.reconcile().catch(() => {});
     refreshPermissions();
     refreshShizuku();
+    refreshGameBooster();
     checkForUpdate();
-  }, [refreshPermissions, refreshShizuku, checkForUpdate]);
+  }, [refreshPermissions, refreshShizuku, refreshGameBooster, checkForUpdate]);
 
-  // Re-check permissions/Shizuku whenever the app comes back to the foreground —
-  // e.g. right after the user grants a permission in system Settings.
+  // Re-check permissions/Shizuku/booster whenever the app comes back to the
+  // foreground — e.g. right after the user grants a permission in system Settings.
   useEffect(() => {
     const sub = AppState.addEventListener('change', s => {
       if (s === 'active') {
         refreshPermissions();
         refreshShizuku();
+        refreshGameBooster();
       }
     });
     return () => sub.remove();
-  }, [refreshPermissions, refreshShizuku]);
+  }, [refreshPermissions, refreshShizuku, refreshGameBooster]);
 
   // After an update installs, show "What's new" once for the new version.
   useEffect(() => {
@@ -521,6 +546,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     shizuku,
     refreshShizuku,
     requestShizuku,
+    gameBooster,
+    refreshGameBooster,
+    blockGameBooster,
     autoMode,
     setAutoMode,
     showOverlay,

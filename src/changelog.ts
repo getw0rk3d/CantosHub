@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.2.0':
+    '• Block Samsung Game Booster (Shizuku) — stop Samsung from throttling your games and hide its pop-up panel so CantosHub is in charge. Fully reversible. (Samsung phones)',
   '1.1.0':
     '• In-app Shizuku setup — live status, a one-tap shortcut to Wireless Debugging, and the full guide right inside the app (Access → Set up Shizuku). Fully in-app pairing (no separate app) is on the way.',
   '1.0.9':

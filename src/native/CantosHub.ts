@@ -121,12 +121,19 @@ type NativeShape = {
   clearCaches(): Promise<ClearCacheResult>;
   uninstallApp(packageName: string): Promise<boolean>;
   openDevSettings(): Promise<boolean>;
+  getGameBoosterStatus(): Promise<GameBoosterStatus>;
+  setGameBoosterBlocked(blocked: boolean): Promise<boolean>;
   hideApp(packageName: string): Promise<boolean>;
   unhideApp(packageName: string): Promise<boolean>;
   setQuickTileProfile(profileJson: string): Promise<boolean>;
   requestAddTile(): Promise<boolean>;
   setGameShortcuts(jsonArray: string): Promise<boolean>;
   pinGameShortcut(json: string): Promise<boolean>;
+};
+
+export type GameBoosterStatus = {
+  present: boolean; // Samsung Game Booster components exist on this device
+  blocked: boolean; // they're currently disabled
 };
 
 /** One game's launcher shortcut spec (Boost & Play). */
@@ -309,6 +316,17 @@ export const CantosHub = {
   async openDevSettings(): Promise<boolean> {
     if (!native) return true;
     return native.openDevSettings();
+  },
+
+  async getGameBoosterStatus(): Promise<GameBoosterStatus> {
+    if (!native) return { present: false, blocked: false };
+    return native.getGameBoosterStatus();
+  },
+
+  /** Block/unblock Samsung's Game Booster (Shizuku). Returns false if not granted. */
+  async setGameBoosterBlocked(blocked: boolean): Promise<boolean> {
+    if (!native) return false;
+    return native.setGameBoosterBlocked(blocked);
   },
 
   /** Hide a game from the launcher (Shizuku). Returns false if Shizuku isn't granted. */

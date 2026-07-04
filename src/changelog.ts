@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.0.9':
+    '• Bug fixes: no more Wi-Fi-lock or overlay leak when starting a boost while one is already running; hardened Shizuku command threading',
   '1.0.8':
     '• Hide games from your phone’s app drawer (Shizuku, no root) — they stay tucked inside CantosHub and re-enable when you play',
   '1.0.7':

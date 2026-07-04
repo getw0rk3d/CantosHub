@@ -1,6 +1,6 @@
 {
-  "versionCode": 9,
-  "versionName": "1.0.8",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.8/CantosHub-1.0.8.apk",
-  "notes": "Hide games from the app drawer (Shizuku) — they stay in CantosHub."
+  "versionCode": 10,
+  "versionName": "1.0.9",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.0.9/CantosHub-1.0.9.apk",
+  "notes": "Bug fixes: Wi-Fi-lock/overlay leak on re-entrant boost, hardened Shizuku threading."
 }

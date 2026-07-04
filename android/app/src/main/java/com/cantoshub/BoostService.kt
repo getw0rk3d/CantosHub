@@ -204,6 +204,7 @@ class BoostService : Service() {
 
   /** High-performance / low-latency Wi-Fi lock — cuts Wi-Fi power-save jitter for online games. */
   private fun acquireWifiLock() {
+    releaseWifiLock() // avoid leaking a prior lock on a re-entrant boost start
     try {
       val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
       val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -229,9 +230,11 @@ class BoostService : Service() {
   }
 
   private fun startOverlayIfNeeded() {
+    // Tear down any existing overlay first so a re-entrant start can't orphan a view.
+    overlay?.hide()
+    overlay = null
     if (showOverlay) {
-      overlay = OverlayHud(this)
-      overlay?.show()
+      overlay = OverlayHud(this).also { it.show() }
     }
   }
 

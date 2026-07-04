@@ -15,25 +15,30 @@ import rikka.shizuku.Shizuku
  * or a one-off ADB command) and every privileged action stays at shell level.
  */
 object ShizukuManager {
+  private val lock = Any()
   private var service: IUserService? = null
   private var binding = false
   private val pending = ArrayList<(IUserService?) -> Unit>()
 
   private val connection = object : ServiceConnection {
     override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-      service = if (binder != null && binder.pingBinder()) {
+      val svc = if (binder != null && binder.pingBinder()) {
         IUserService.Stub.asInterface(binder)
       } else {
         null
       }
-      binding = false
-      val copy = ArrayList(pending)
-      pending.clear()
-      copy.forEach { it(service) }
+      val copy = synchronized(lock) {
+        service = svc
+        binding = false
+        val c = ArrayList(pending)
+        pending.clear()
+        c
+      }
+      copy.forEach { it(svc) }
     }
 
     override fun onServiceDisconnected(name: ComponentName?) {
-      service = null
+      synchronized(lock) { service = null }
     }
   }
 
@@ -57,7 +62,7 @@ object ShizukuManager {
       .version(1)
 
   private fun withService(ctx: Context, cb: (IUserService?) -> Unit) {
-    val current = service
+    val current = synchronized(lock) { service }
     if (current != null) {
       cb(current)
       return
@@ -66,15 +71,25 @@ object ShizukuManager {
       cb(null)
       return
     }
-    pending.add(cb)
-    if (!binding) {
-      binding = true
+    val doBind = synchronized(lock) {
+      pending.add(cb)
+      if (!binding) {
+        binding = true
+        true
+      } else {
+        false
+      }
+    }
+    if (doBind) {
       try {
         Shizuku.bindUserService(userServiceArgs(ctx.applicationContext), connection)
       } catch (e: Exception) {
-        binding = false
-        val copy = ArrayList(pending)
-        pending.clear()
+        val copy = synchronized(lock) {
+          binding = false
+          val c = ArrayList(pending)
+          pending.clear()
+          c
+        }
         copy.forEach { it(null) }
       }
     }

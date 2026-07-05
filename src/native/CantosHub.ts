@@ -134,6 +134,7 @@ type NativeShape = {
 export type GameBoosterStatus = {
   present: boolean; // Samsung Game Booster components exist on this device
   blocked: boolean; // they're currently disabled
+  components: string[]; // friendly names of the components found
 };
 
 /** One game's launcher shortcut spec (Boost & Play). */
@@ -319,7 +320,7 @@ export const CantosHub = {
   },
 
   async getGameBoosterStatus(): Promise<GameBoosterStatus> {
-    if (!native) return { present: false, blocked: false };
+    if (!native) return { present: false, blocked: false, components: [] };
     return native.getGameBoosterStatus();
   },
 

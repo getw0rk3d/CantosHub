@@ -208,7 +208,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try {
       setGameBooster(await CantosHub.getGameBoosterStatus());
     } catch {
-      setGameBooster({ present: false, blocked: false });
+      setGameBooster({ present: false, blocked: false, components: [] });
     }
   }, []);
 

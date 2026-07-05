@@ -451,9 +451,13 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
    * overlay. Blocking them (Shizuku, reversible) stops Samsung throttling and the
    * pop-up panel so CantosHub is in charge.
    */
+  // Samsung game bloat we can safely disable (throttler, overlay, launcher).
+  // Deliberately NOT the GPU game driver (com.samsung.gamedriver.*) — that's the
+  // updatable graphics driver, not bloat.
   private val samsungBooster = listOf(
-    "com.samsung.android.game.gos",
-    "com.samsung.android.game.gametools",
+    "com.samsung.android.game.gos" to "Game Optimizing Service (throttler)",
+    "com.samsung.android.game.gametools" to "Game Booster overlay",
+    "com.samsung.android.game.gamehome" to "Game Launcher",
   )
 
   @ReactMethod
@@ -462,13 +466,15 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       val pm = ctx.packageManager
       var present = false
       var anyEnabled = false
-      for (p in samsungBooster) {
+      val components = Arguments.createArray()
+      for ((p, label) in samsungBooster) {
         val setting = try {
           pm.getApplicationEnabledSetting(p)
         } catch (e: IllegalArgumentException) {
           continue // not installed on this device
         }
         present = true
+        components.pushString(label)
         if (setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER &&
           setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
         ) {
@@ -478,6 +484,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       val m = Arguments.createMap()
       m.putBoolean("present", present)
       m.putBoolean("blocked", present && !anyEnabled)
+      m.putArray("components", components)
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("GB_STATUS_ERR", e)
@@ -491,7 +498,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       return
     }
     val op = if (blocked) "disable-user --user 0" else "enable --user 0"
-    val script = samsungBooster.joinToString("; ") { "pm $op $it" }
+    val script = samsungBooster.joinToString("; ") { "pm $op ${it.first}" }
     ShizukuManager.exec(ctx, listOf("sh", "-c", script)) { out ->
       promise.resolve(out != null && !out.startsWith("ERR"))
     }

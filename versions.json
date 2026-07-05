@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "1.2.0",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.0/CantosHub-1.2.0.apk",
-  "notes": "Block Samsung Game Booster (Shizuku) so it can't throttle games or pop up while you use CantosHub."
+  "versionCode": 13,
+  "versionName": "1.2.1",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.1/CantosHub-1.2.1.apk",
+  "notes": "Block Samsung Game Booster now also covers Game Launcher and lists exactly what it disables."
 }

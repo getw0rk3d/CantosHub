@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.2.1':
+    '• Block Samsung Game Booster now also covers the Game Launcher, and the card lists exactly which Samsung components it disables. (Your GPU game driver is deliberately left alone.)',
   '1.2.0':
     '• Block Samsung Game Booster (Shizuku) — stop Samsung from throttling your games and hide its pop-up panel so CantosHub is in charge. Fully reversible. (Samsung phones)',
   '1.1.0':

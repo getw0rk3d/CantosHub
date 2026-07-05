@@ -284,6 +284,11 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
             CantosHub is in charge. Note: this also turns off Samsung's automatic thermal
             management — keep an eye on the thermal readout above.
           </Text>
+          {store.gameBooster.components.length > 0 && (
+            <Text style={styles.boosterList}>
+              Blocks: {store.gameBooster.components.join(' · ')}
+            </Text>
+          )}
           <ToggleRow
             label="Block Samsung Game Booster"
             description={
@@ -421,6 +426,7 @@ const styles = StyleSheet.create({
   freeBtn: { flex: 1 },
   freeMsg: { color: colors.accent, fontSize: 13, marginTop: spacing.md, lineHeight: 18 },
   freeDivider: { height: 1, backgroundColor: colors.border, marginTop: spacing.md },
+  boosterList: { color: colors.textDim, fontSize: 12, marginBottom: spacing.sm, lineHeight: 17 },
   link: { color: colors.accent2, fontWeight: '700', fontSize: 13 },
   footnote: {
     color: colors.textDim,

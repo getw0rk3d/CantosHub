@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.2.2':
+    '• Fixed: a phone call during a boost (in Auto mode) could leave your volume stuck and mute game audio. CantosHub now holds the boost steady through calls and never touches call-critical apps.',
   '1.2.1':
     '• Block Samsung Game Booster now also covers the Game Launcher, and the card lists exactly which Samsung components it disables. (Your GPU game driver is deliberately left alone.)',
   '1.2.0':

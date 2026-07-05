@@ -10,6 +10,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
@@ -143,6 +144,11 @@ class BoostService : Service() {
 
   private fun handleAuto() {
     val fg = currentForegroundApp()
+    // Hold the current boost steady during a phone call — including the incoming-ring
+    // window before AudioManager.mode flips (foreground is already the dialer/InCallUI).
+    // Reverting + re-applying (and re-running Free RAM) around a call can kill the
+    // dialer/telecom process mid audio-reset and leave media audio / volume stuck.
+    if (isCallActive() || Cleanup.isCallApp(fg)) return
     val match = if (fg.isNullOrEmpty()) {
       null
     } else {
@@ -235,6 +241,22 @@ class BoostService : Service() {
     overlay = null
     if (showOverlay) {
       overlay = OverlayHud(this).also { it.show() }
+    }
+  }
+
+  /** True while the phone is ringing or in a call (telephony or VoIP). No permission needed. */
+  private fun isCallActive(): Boolean {
+    return try {
+      val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+      when (am.mode) {
+        AudioManager.MODE_IN_CALL,
+        AudioManager.MODE_IN_COMMUNICATION,
+        AudioManager.MODE_RINGTONE,
+        -> true
+        else -> false
+      }
+    } catch (e: Exception) {
+      false
     }
   }
 

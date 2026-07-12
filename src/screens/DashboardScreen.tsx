@@ -1,6 +1,7 @@
 /** Main boost dashboard: master switch, quick toggles, live telemetry. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   DeviceEventEmitter,
   Pressable,
   RefreshControl,
@@ -61,6 +62,10 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   }, [store]);
 
   const loadTelemetry = useCallback(async () => {
+    // Don't poll native telemetry while CantosHub is backgrounded (e.g. a game is
+    // in the foreground) — RN doesn't reliably pause app-level timers, and the
+    // foreground service keeps this JS runtime alive during a boost.
+    if (AppState.currentState !== 'active') return;
     const t = await CantosHub.getTelemetry();
     if (mounted.current) setTelemetry(t);
   }, []);

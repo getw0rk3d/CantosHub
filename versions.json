@@ -1,6 +1,6 @@
 {
-  "versionCode": 14,
-  "versionName": "1.2.2",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.2/CantosHub-1.2.2.apk",
-  "notes": "Fix: a call during a boost could leave volume stuck / mute game audio. Boost now holds steady through calls."
+  "versionCode": 15,
+  "versionName": "1.2.3",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.3/CantosHub-1.2.3.apk",
+  "notes": "Big smoothness fix: reliable game detection (no mid-game re-boost churn), Free RAM once per game, no refresh-rate lock, start work off the main thread."
 }

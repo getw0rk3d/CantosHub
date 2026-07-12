@@ -133,12 +133,18 @@ object BoostActions {
     val cr = ctx.contentResolver
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     return try {
-      if (enable) {
-        Settings.System.putFloat(cr, "peak_refresh_rate", 120f)
-        Settings.System.putFloat(cr, "min_refresh_rate", 120f)
-      } else {
-        Settings.System.putFloat(cr, "peak_refresh_rate", sp.getFloat(KEY_PEAK, 60f))
-        Settings.System.putFloat(cr, "min_refresh_rate", sp.getFloat(KEY_MIN, 0f))
+      // Only raise peak_refresh_rate — do NOT force min_refresh_rate up too. Locking
+      // min == peak pins the panel to a fixed rate, which can trigger a disruptive
+      // display mode switch (black-frame/hitch) and hurts battery. A higher peak lets
+      // the panel go up to it while staying adaptive. Skip the write if unchanged.
+      val target = if (enable) 120f else sp.getFloat(KEY_PEAK, 60f)
+      val current = try {
+        Settings.System.getFloat(cr, "peak_refresh_rate")
+      } catch (e: Exception) {
+        -1f
+      }
+      if (current != target) {
+        Settings.System.putFloat(cr, "peak_refresh_rate", target)
       }
       true
     } catch (e: Exception) {

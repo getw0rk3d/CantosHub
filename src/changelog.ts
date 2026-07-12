@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.2.3':
+    '• Big smoothness fix — CantosHub should no longer cause in-game lag/stutter. It now detects your game reliably (an ad, sign-in popup, or notification could previously make it think you left and re-run the boost mid-game), frees RAM only once per game (targeted, not a 150-app sweep), stopped locking the refresh rate, and moved start-up work off the main thread.',
   '1.2.2':
     '• Fixed: a phone call during a boost (in Auto mode) could leave your volume stuck and mute game audio. CantosHub now holds the boost steady through calls and never touches call-critical apps.',
   '1.2.1':

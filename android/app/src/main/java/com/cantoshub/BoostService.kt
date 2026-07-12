@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -45,7 +46,19 @@ class BoostService : Service() {
     const val EXTRA_FREERAM = "freeram"
     private const val CHANNEL_ID = "cantoshub_boost"
     private const val NOTIF_ID = 7341
-    private const val POLL_MS = 2500L
+    private const val POLL_MS = 4000L
+
+    // Require this many consecutive ticks on a real, different app before we
+    // conclude the user left the game and revert — absorbs transient blips
+    // (ads, sign-in popups, a quick home tap) that would otherwise cause churn.
+    private const val REVERT_MISSES = 2
+
+    // Foreground packages that mean "can't identify the game / user peeked",
+    // NOT "left the game" — never revert on these.
+    private val IGNORED_FG = listOf(
+      "com.android.systemui",
+      "com.google.android.gms",
+    )
 
     @Volatile
     var isRunning = false
@@ -63,6 +76,13 @@ class BoostService : Service() {
   private var profiles: List<JSONObject> = emptyList()
   private var appliedPackage: String? = null
   private var appliedProfileName: String = ""
+
+  // Auto-mode foreground tracking + anti-flap state.
+  private var missCount = 0
+  private var lastFreedPkg: String? = null // Free RAM runs once per game session
+  private var lastKnownFg: String? = null // last real MOVE_TO_FOREGROUND package
+  private var lastEventQueryTime = 0L
+  private var tickCount = 0
 
   // FPS sampling (Shizuku only): average rendered FPS from gfxinfo frame deltas.
   private var lastFrames = -1
@@ -94,12 +114,17 @@ class BoostService : Service() {
     startForegroundCompat(buildNotification("Boost active", "Profile: $appliedProfileName"))
     isRunning = true
     acquireWifiLock()
-    try { BoostActions.applyProfile(this, profile) } catch (e: Exception) { }
-    val pkg = profile.optString("packageName", "")
-    if (pkg.isNotBlank()) StatsStore.recordSession(this, pkg)
-    if (freeRamOnBoost) {
-      try { Cleanup.killBackground(this, if (pkg.isNotBlank()) pkg else null) } catch (e: Exception) { }
-    }
+    // Apply + Free RAM off the main thread — onStartCommand runs on the main thread
+    // and this work (Settings writes + a kill sweep) would otherwise jank/ANR right
+    // as the user taps Start.
+    Thread {
+      try { BoostActions.applyProfile(this, profile) } catch (e: Exception) { }
+      val pkg = profile.optString("packageName", "")
+      if (pkg.isNotBlank()) StatsStore.recordSession(this, pkg)
+      if (freeRamOnBoost) {
+        try { Cleanup.killBackground(this, if (pkg.isNotBlank()) pkg else null) } catch (e: Exception) { }
+      }
+    }.start()
     startOverlayIfNeeded()
     if (showOverlay) startWorker()
   }
@@ -112,6 +137,10 @@ class BoostService : Service() {
     profiles = parseArray(intent?.getStringExtra(EXTRA_PROFILES))
     appliedPackage = null
     appliedProfileName = ""
+    missCount = 0
+    lastFreedPkg = null
+    lastKnownFg = null
+    lastEventQueryTime = 0L
     startForegroundCompat(buildNotification("Auto boost", "Watching for games…"))
     isRunning = true
     acquireWifiLock()
@@ -133,7 +162,9 @@ class BoostService : Service() {
       try {
         if (auto) handleAuto()
         if (showOverlay) {
-          if (ShizukuManager.hasPermission()) sampleFps()
+          tickCount++
+          // Throttle the gfxinfo FPS sample — it perturbs the game being measured.
+          if (ShizukuManager.hasPermission() && tickCount % 2 == 0) sampleFps()
           overlay?.update(buildHudText())
         }
       } catch (e: Exception) {
@@ -144,25 +175,26 @@ class BoostService : Service() {
 
   private fun handleAuto() {
     val fg = currentForegroundApp()
-    // Hold the current boost steady during a phone call — including the incoming-ring
-    // window before AudioManager.mode flips (foreground is already the dialer/InCallUI).
-    // Reverting + re-applying (and re-running Free RAM) around a call can kill the
-    // dialer/telecom process mid audio-reset and leave media audio / volume stuck.
+    // Hold the current boost steady during a phone call (see isCallActive/isCallApp).
     if (isCallActive() || Cleanup.isCallApp(fg)) return
-    val match = if (fg.isNullOrEmpty()) {
-      null
-    } else {
-      profiles.firstOrNull { it.optString("packageName", "") == fg }
-    }
-    val matchPkg = match?.optString("packageName")
-    if (matchPkg == appliedPackage) return
+    // "Can't identify the game / user peeked at an overlay" is NOT "left the game" —
+    // never revert on our own package or transient system UI (shade, sign-in popups).
+    if (fg.isNullOrEmpty() || fg == packageName || IGNORED_FG.any { fg.startsWith(it) }) return
 
-    // Switching profile: revert whatever is applied, then apply the new match.
-    if (appliedPackage != null) {
-      try { BoostActions.revert(this) } catch (e: Exception) { }
-      try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+    val match = profiles.firstOrNull { it.optString("packageName", "") == fg }
+    val matchPkg = match?.optString("packageName")
+
+    if (matchPkg == appliedPackage) {
+      missCount = 0
+      return
     }
+
     if (match != null) {
+      // A (different) profiled game is now foreground — switch to it.
+      if (appliedPackage != null) {
+        try { BoostActions.revert(this) } catch (e: Exception) { }
+        try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+      }
       try { BoostActions.applyProfile(this, match) } catch (e: Exception) { }
       if (ShizukuManager.hasPermission()) {
         try { ShizukuActions.apply(this, match) { } } catch (e: Exception) { }
@@ -170,14 +202,26 @@ class BoostService : Service() {
       appliedPackage = matchPkg
       appliedProfileName = match.optString("name", "Boost")
       if (matchPkg != null) StatsStore.recordSession(this, matchPkg)
-      if (freeRamOnBoost) {
+      // Free RAM at most once per game session — never a mid-game kill-storm.
+      if (freeRamOnBoost && matchPkg != null && matchPkg != lastFreedPkg) {
         try { Cleanup.killBackground(this, matchPkg) } catch (e: Exception) { }
+        lastFreedPkg = matchPkg
       }
+      missCount = 0
       updateNotification("Auto boost", "Active: $appliedProfileName")
-    } else {
-      appliedPackage = null
-      appliedProfileName = ""
-      updateNotification("Auto boost", "Watching for games…")
+    } else if (appliedPackage != null) {
+      // A real, non-game app is foreground. Debounce before reverting so a brief
+      // blip (ad, sign-in, a quick home tap) can't tear down the boost mid-game.
+      missCount++
+      if (missCount >= REVERT_MISSES) {
+        try { BoostActions.revert(this) } catch (e: Exception) { }
+        try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+        appliedPackage = null
+        appliedProfileName = ""
+        lastFreedPkg = null
+        missCount = 0
+        updateNotification("Auto boost", "Watching for games…")
+      }
     }
   }
 
@@ -260,14 +304,30 @@ class BoostService : Service() {
     }
   }
 
+  /**
+   * Reliable foreground app via UsageEvents (the last MOVE_TO_FOREGROUND). The old
+   * `maxByOrNull { lastTimeUsed }` heuristic was broken — a game's lastTimeUsed is
+   * frozen while it stays foreground, so any other app's later event "won" the vote
+   * and made CantosHub think the user left the game. We track the last real
+   * foreground transition across polls so a steadily-running game stays detected.
+   */
   private fun currentForegroundApp(): String? {
     return try {
       val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
       val now = System.currentTimeMillis()
-      val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 60_000, now)
-      stats?.maxByOrNull { it.lastTimeUsed }?.packageName
+      val begin = if (lastEventQueryTime == 0L) now - 60_000 else lastEventQueryTime
+      val events = usm.queryEvents(begin, now)
+      val ev = UsageEvents.Event()
+      while (events.hasNextEvent()) {
+        events.getNextEvent(ev)
+        if (ev.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+          lastKnownFg = ev.packageName
+        }
+      }
+      lastEventQueryTime = now
+      lastKnownFg
     } catch (e: Exception) {
-      null
+      lastKnownFg
     }
   }
 

@@ -1,6 +1,6 @@
 {
-  "versionCode": 15,
-  "versionName": "1.2.3",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.3/CantosHub-1.2.3.apk",
-  "notes": "Big smoothness fix: reliable game detection (no mid-game re-boost churn), Free RAM once per game, no refresh-rate lock, start work off the main thread."
+  "versionCode": 16,
+  "versionName": "1.2.4",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.2.4/CantosHub-1.2.4.apk",
+  "notes": "New look (round boost button, live tiles, games row) + fixes: no more re-boost when reopening the app, overlay no longer blocks taps, exact resolution restore."
 }

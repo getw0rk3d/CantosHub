@@ -515,8 +515,15 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   // --- Library (Phase 3) ---
   @ReactMethod
-  fun listGames(promise: Promise) {
+  fun listGames(extraJson: String, promise: Promise) {
     try {
+      // Apps the user added to Games themselves (not tagged as games by Android).
+      val extras = try {
+        val a = JSONArray(extraJson)
+        (0 until a.length()).map { a.optString(it) }.toHashSet()
+      } catch (e: Exception) {
+        HashSet()
+      }
       val pm = ctx.packageManager
       val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
       val activities = pm.queryIntentActivities(launchable, 0)
@@ -533,7 +540,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
           @Suppress("DEPRECATION")
           (ai.flags and ApplicationInfo.FLAG_IS_GAME) != 0
         }
-        if (!isGame) continue
+        if (!isGame && pkg !in extras) continue
         val m = Arguments.createMap()
         m.putString("packageName", pkg)
         m.putString("label", ri.loadLabel(pm).toString())
@@ -545,6 +552,79 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       promise.reject("LIST_GAMES_ERR", e)
     }
   }
+
+  /** Launchable apps first installed after [sinceMs] (for the "new app — add it?" prompt). */
+  @ReactMethod
+  fun listAppsInstalledSince(sinceMs: Double, promise: Promise) {
+    try {
+      val pm = ctx.packageManager
+      val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+      val seen = HashSet<String>()
+      val arr = Arguments.createArray()
+      for (ri in pm.queryIntentActivities(launchable, 0)) {
+        val ai = ri.activityInfo.applicationInfo
+        val pkg = ai.packageName
+        if (pkg == ctx.packageName || !seen.add(pkg)) continue
+        val installed = try {
+          pm.getPackageInfo(pkg, 0).firstInstallTime
+        } catch (e: Exception) {
+          0L
+        }
+        if (installed <= sinceMs.toLong()) continue
+        val m = Arguments.createMap()
+        m.putString("packageName", pkg)
+        m.putString("label", ri.loadLabel(pm).toString())
+        m.putBoolean("isGame", isGameApp(ai))
+        arr.pushMap(m)
+      }
+      promise.resolve(arr)
+    } catch (e: Exception) {
+      promise.reject("LIST_NEW_ERR", e)
+    }
+  }
+
+  /**
+   * What the Share sheet or the "Add game" shortcut asked for, once:
+   * {kind: "pick"} or {kind: "share", packageName?, label?, installed, isGame}. Null if nothing.
+   */
+  @ReactMethod
+  fun takePendingAdd(promise: Promise) {
+    try {
+      val (kind, text) = AddAppActivity.take(ctx) ?: run {
+        promise.resolve(null)
+        return
+      }
+      val m = Arguments.createMap()
+      m.putString("kind", kind)
+      if (kind == "share") {
+        val pkg = AddAppActivity.packageFromText(text)
+        val ai = pkg?.let {
+          try {
+            ctx.packageManager.getApplicationInfo(it, 0)
+          } catch (e: Exception) {
+            null
+          }
+        }
+        if (pkg != null) m.putString("packageName", pkg)
+        m.putBoolean("installed", ai != null)
+        if (ai != null) {
+          m.putString("label", ctx.packageManager.getApplicationLabel(ai).toString())
+          m.putBoolean("isGame", isGameApp(ai))
+        }
+      }
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.resolve(null)
+    }
+  }
+
+  private fun isGameApp(ai: ApplicationInfo): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      ai.category == ApplicationInfo.CATEGORY_GAME
+    } else {
+      @Suppress("DEPRECATION")
+      (ai.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+    }
 
   @ReactMethod
   fun getGameStats(promise: Promise) {
@@ -779,7 +859,8 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     try {
       val arr = JSONArray(jsonArray)
       val list = ArrayList<ShortcutInfoCompat>()
-      for (i in 0 until minOf(arr.length(), 4)) {
+      // 3 games + the static "Add game" shortcut fit every launcher's long-press menu.
+      for (i in 0 until minOf(arr.length(), 3)) {
         list.add(buildShortcut(arr.getJSONObject(i)))
       }
       ShortcutManagerCompat.setDynamicShortcuts(ctx, list)

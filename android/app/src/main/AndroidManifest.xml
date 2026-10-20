@@ -50,6 +50,28 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+      </activity>
+
+      <!-- Add an app to CantosHub: Share from the Play / Galaxy Store, or the
+           "Add game" icon shortcut. Invisible; opens CantosHub's add prompt. -->
+      <activity
+          android:name=".AddAppActivity"
+          android:exported="true"
+          android:label="Add to CantosHub"
+          android:theme="@android:style/Theme.Translucent.NoTitleBar"
+          android:excludeFromRecents="true"
+          android:taskAffinity=""
+          android:noHistory="true">
+        <intent-filter>
+          <action android:name="android.intent.action.SEND" />
+          <category android:name="android.intent.category.DEFAULT" />
+          <data android:mimeType="text/plain" />
+        </intent-filter>
+        <intent-filter>
+          <action android:name="com.cantoshub.ADD_GAME" />
+          <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
       </activity>
 
       <service

@@ -14,6 +14,7 @@ import PermissionsScreen from './src/screens/PermissionsScreen';
 import ProfilesScreen from './src/screens/ProfilesScreen';
 import KidsScreen from './src/screens/KidsScreen';
 import KidsHomeScreen from './src/screens/KidsHomeScreen';
+import { AddAppsPrompt } from './src/components/AddAppsPrompt';
 import { Icon, IconName } from './src/components/Icon';
 import { StoreProvider, useStore } from './src/state/store';
 import { colors } from './src/theme';
@@ -90,6 +91,7 @@ function AppShell() {
         </View>
       </SafeAreaView>
       <WhatsNewModal />
+      <AddAppsPrompt />
     </>
   );
 }

@@ -57,6 +57,14 @@ export type InstalledApp = {
   label: string;
 };
 
+/** An app installed since the last check (for the "add it?" prompt). */
+export type NewApp = InstalledApp & { isGame: boolean };
+
+/** What the Share sheet or the "Add game" icon shortcut asked for. */
+export type PendingAdd =
+  | { kind: 'pick' }
+  | { kind: 'share'; packageName?: string; label?: string; installed: boolean; isGame?: boolean };
+
 export type GameInfo = {
   packageName: string;
   label: string;
@@ -120,7 +128,9 @@ type NativeShape = {
   applyShizukuProfile(profileJson: string): Promise<boolean>;
   revertShizukuProfile(): Promise<boolean>;
   listInstalledApps(): Promise<InstalledApp[]>;
-  listGames(): Promise<GameInfo[]>;
+  listGames(extraJson: string): Promise<GameInfo[]>;
+  listAppsInstalledSince(sinceMs: number): Promise<NewApp[]>;
+  takePendingAdd(): Promise<PendingAdd | null>;
   launchApp(packageName: string): Promise<boolean>;
   getAppIcon(packageName: string): Promise<string | null>;
   getVersionInfo(): Promise<VersionInfo>;
@@ -342,9 +352,20 @@ export const CantosHub = {
     return native.listInstalledApps();
   },
 
-  async listGames(): Promise<GameInfo[]> {
+  /** Android-tagged games plus [extra] packages the user added themselves. */
+  async listGames(extra: string[] = []): Promise<GameInfo[]> {
     if (!native) return [];
-    return native.listGames();
+    return native.listGames(JSON.stringify(extra));
+  },
+
+  async listAppsInstalledSince(sinceMs: number): Promise<NewApp[]> {
+    if (!native) return [];
+    return native.listAppsInstalledSince(sinceMs);
+  },
+
+  async takePendingAdd(): Promise<PendingAdd | null> {
+    if (!native) return null;
+    return native.takePendingAdd();
   },
 
   async launchApp(packageName: string): Promise<boolean> {

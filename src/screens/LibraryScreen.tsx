@@ -43,6 +43,8 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
   const [newFolder, setNewFolder] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
 
+  const addedPkgs = store.addedGames.map(a => a.packageName);
+  const addedKey = addedPkgs.join(',');
   const load = useCallback(async (all: boolean) => {
     setLoading(true);
     try {
@@ -51,24 +53,29 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
         const apps = await CantosHub.listInstalledApps();
         setGames(apps.map(a => ({ ...a, totalTimeMs: 0 })));
       } else {
-        setGames(await CantosHub.listGames());
+        setGames(await CantosHub.listGames(addedKey ? addedKey.split(',') : []));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addedKey]);
 
   useEffect(() => {
-    load(false);
     store.refreshPermissions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // (Re)load when opened and whenever the user's own added games change.
+  useEffect(() => {
+    load(showAll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
   // Keep the app-icon long-press shortcuts in sync with bound games.
   useEffect(() => {
     const specs: ShortcutSpec[] = store.profiles
       .filter(p => p.packageName)
-      .slice(0, 4)
+      .slice(0, 3) // + the static "Add game" shortcut
       .map(p => ({
         id: `boost_${p.packageName}`,
         label: games.find(g => g.packageName === p.packageName)?.label || p.name,
@@ -112,7 +119,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
         <Text style={styles.sub}>
           {showAll
             ? 'Showing every launchable app — use this if a game is missing.'
-            : 'Apps Android tags as games. Missing one? Tap ALL APPS.'}
+            : 'Apps Android tags as games, plus ones you added. Missing one? Tap ALL APPS, or long-press the CantosHub icon → Add game.'}
         </Text>
 
         {usageOff && (
@@ -326,6 +333,27 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                   }
                 }}
               />
+            )}
+            {moreFor && addedPkgs.includes(moreFor.packageName) ? (
+              <MoreItem
+                label="Remove from Games"
+                onPress={() => {
+                  const g = moreFor;
+                  setMoreFor(null);
+                  if (g) store.removeAddedGame(g.packageName);
+                }}
+              />
+            ) : (
+              showAll && (
+                <MoreItem
+                  label="Add to Games"
+                  onPress={() => {
+                    const g = moreFor;
+                    setMoreFor(null);
+                    if (g) store.addGames([{ packageName: g.packageName, label: g.label }]);
+                  }}
+                />
+              )
             )}
             <MoreItem
               label="Uninstall game"

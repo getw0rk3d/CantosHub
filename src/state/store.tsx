@@ -111,6 +111,13 @@ type Store = {
   hideGame: (game: HiddenGame) => Promise<boolean>;
   unhideGame: (packageName: string) => Promise<boolean>;
 
+  /** Apps the user added to Games (Android doesn't tag them as games). */
+  addedGames: HiddenGame[];
+  addGames: (apps: HiddenGame[]) => void;
+  removeAddedGame: (packageName: string) => void;
+  /** Saved state has loaded. */
+  hydrated: boolean;
+
   permissions: PermissionStatus | null;
   refreshPermissions: () => Promise<void>;
 
@@ -163,6 +170,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [freeRamOnBoost, setFreeRamOnBoost] = useState(true);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [hiddenGames, setHiddenGames] = useState<HiddenGame[]>([]);
+  const [addedGames, setAddedGames] = useState<HiddenGame[]>([]);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
@@ -333,6 +341,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return ok;
   }, []);
 
+  const addGames = useCallback((apps: HiddenGame[]) => {
+    setAddedGames(prev => [
+      ...prev,
+      ...apps
+        .filter(a => !prev.some(p => p.packageName === a.packageName))
+        .map(a => ({ packageName: a.packageName, label: a.label })),
+    ]);
+  }, []);
+
+  const removeAddedGame = useCallback((packageName: string) => {
+    setAddedGames(prev => prev.filter(a => a.packageName !== packageName));
+  }, []);
+
   const unhideGame = useCallback(async (packageName: string): Promise<boolean> => {
     const ok = await CantosHub.unhideApp(packageName);
     if (ok) setHiddenGames(prev => prev.filter(h => h.packageName !== packageName));
@@ -493,6 +514,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           freeRamOnBoost: boolean;
           folders: Folder[];
           hiddenGames: HiddenGame[];
+          addedGames: HiddenGame[];
         }>;
         if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
           setProfiles(saved.profiles);
@@ -508,6 +530,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
         if (Array.isArray(saved.folders)) setFolders(saved.folders);
         if (Array.isArray(saved.hiddenGames)) setHiddenGames(saved.hiddenGames);
+        if (Array.isArray(saved.addedGames)) setAddedGames(saved.addedGames);
       })
       .catch(() => {})
       .finally(() => {
@@ -531,6 +554,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         freeRamOnBoost,
         folders,
         hiddenGames,
+        addedGames,
       }),
     ).catch(() => {});
   }, [
@@ -542,6 +566,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     freeRamOnBoost,
     folders,
     hiddenGames,
+    addedGames,
   ]);
 
   const value: Store = {
@@ -560,6 +585,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     hiddenGames,
     hideGame,
     unhideGame,
+    addedGames,
+    addGames,
+    removeAddedGame,
+    hydrated,
     permissions,
     refreshPermissions,
     shizuku,

@@ -93,7 +93,7 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
     pinStep === 'old' ? 'Current PIN' : pinStep === 'new' ? 'New 4-digit PIN' : 'Confirm new PIN';
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Kids Mode</Text>
       <Text style={styles.sub}>
         Lock the phone to the apps you choose — games or anything else. Only your PIN unlocks it.

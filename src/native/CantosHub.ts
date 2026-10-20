@@ -101,6 +101,8 @@ type NativeShape = {
   ): Promise<boolean>;
   stopBoost(): Promise<boolean>;
   isBoostRunning(): Promise<boolean>;
+  updateAutoProfiles(profilesJson: string): Promise<boolean>;
+  getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
   setMaxBrightness(enable: boolean): Promise<boolean>;
@@ -129,6 +131,12 @@ type NativeShape = {
   requestAddTile(): Promise<boolean>;
   setGameShortcuts(jsonArray: string): Promise<boolean>;
   pinGameShortcut(json: string): Promise<boolean>;
+};
+
+/** What this device supports (so no-op toggles can be hidden). */
+export type Capabilities = {
+  peakRefreshRate: boolean; // AOSP peak_refresh_rate exists (not on Samsung One UI)
+  samsung: boolean;
 };
 
 export type GameBoosterStatus = {
@@ -211,6 +219,17 @@ export const CantosHub = {
   async isBoostRunning(): Promise<boolean> {
     if (!native) return false;
     return native.isBoostRunning();
+  },
+
+  /** Push edited profiles to a running Auto boost (no restart, no re-boost). */
+  async updateAutoProfiles(profiles: BoostProfile[]): Promise<boolean> {
+    if (!native) return true;
+    return native.updateAutoProfiles(JSON.stringify(profiles));
+  },
+
+  async getCapabilities(): Promise<Capabilities> {
+    if (!native) return { peakRefreshRate: true, samsung: false };
+    return native.getCapabilities();
   },
 
   /** Undo any lingering changes if the app was killed mid-boost. */

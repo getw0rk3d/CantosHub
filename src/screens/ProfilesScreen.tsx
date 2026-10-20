@@ -43,6 +43,14 @@ export default function ProfilesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Labels for bound games ("Wild Rift" instead of "league.wildrift").
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    CantosHub.listInstalledApps()
+      .then(list => setLabels(Object.fromEntries(list.map(a => [a.packageName, a.label]))))
+      .catch(() => {});
+  }, []);
+
   const pickerProfile = store.profiles.find(p => p.id === pickerFor) || null;
   const gameProfile = store.profiles.find(p => p.id === gamePickerFor) || null;
 
@@ -58,6 +66,8 @@ export default function ProfilesScreen() {
         <ProfileCard
           key={p.id}
           profile={p}
+          gameLabel={p.packageName ? labels[p.packageName] ?? `${shortPkg(p.packageName)} (not installed)` : undefined}
+          showPeak={store.capabilities?.peakRefreshRate !== false}
           active={p.id === store.activeProfileId}
           shizukuGranted={shizukuGranted}
           onActivate={() => store.setActiveProfileId(p.id)}
@@ -122,6 +132,8 @@ function shortPkg(pkg: string): string {
 
 function ProfileCard({
   profile,
+  gameLabel,
+  showPeak,
   active,
   shizukuGranted,
   onActivate,
@@ -132,6 +144,8 @@ function ProfileCard({
   onDelete,
 }: {
   profile: BoostProfile;
+  gameLabel?: string;
+  showPeak: boolean;
   active: boolean;
   shizukuGranted: boolean;
   onActivate: () => void;
@@ -156,7 +170,7 @@ function ProfileCard({
           </Pressable>
         )
       }>
-      {FIELDS.map(f => (
+      {FIELDS.filter(f => showPeak || f.key !== 'peakRefreshRate').map(f => (
         <View key={f.key} style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>{f.label}</Text>
           <Switch
@@ -171,7 +185,7 @@ function ProfileCard({
       <Pressable style={styles.fieldRow} onPress={onPickGame}>
         <Text style={styles.fieldLabel}>Game (for Auto)</Text>
         <Text style={styles.link}>
-          {profile.packageName ? shortPkg(profile.packageName) : 'Not set'}
+          {gameLabel ?? 'Not set'}
         </Text>
       </Pressable>
 

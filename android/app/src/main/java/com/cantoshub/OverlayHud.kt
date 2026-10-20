@@ -42,6 +42,7 @@ class OverlayHud(private val ctx: Context) {
         WindowManager.LayoutParams.WRAP_CONTENT,
         type,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+          WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or // taps pass through to the game
           WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
           WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         PixelFormat.TRANSLUCENT,

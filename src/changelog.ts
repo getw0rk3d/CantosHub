@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.2.4':
+    '• Reliability fixes: reopening the app (or the Boost tab) no longer restarts a running boost and re-runs Free RAM; if Android restarts the boost it resumes your mode instead of killing apps; Quick tile and home-screen shortcuts now apply Shizuku tweaks too; profile edits apply live in Auto mode; the overlay HUD no longer blocks taps in games; stopping a boost restores your exact resolution (Samsung FHD+ stays FHD+) and only undoes what the boost changed.',
   '1.2.3':
     '• Big smoothness fix — CantosHub should no longer cause in-game lag/stutter. It now detects your game reliably (an ad, sign-in popup, or notification could previously make it think you left and re-run the boost mid-game), frees RAM only once per game (targeted, not a 150-app sweep), stopped locking the refresh rate, and moved start-up work off the main thread.',
   '1.2.2':

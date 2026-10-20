@@ -183,6 +183,36 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /** Push edited profiles to a running Auto boost without restarting it. */
+  @ReactMethod
+  fun updateAutoProfiles(profilesJson: String, promise: Promise) {
+    try {
+      if (BoostService.isRunning) {
+        val intent = Intent(ctx, BoostService::class.java).apply {
+          action = BoostService.ACTION_UPDATE_PROFILES
+          putExtra(BoostService.EXTRA_PROFILES, profilesJson)
+        }
+        ctx.startService(intent)
+      }
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("BOOST_UPDATE_ERR", e)
+    }
+  }
+
+  /** What this device can actually do, so the UI can hide toggles that would be no-ops. */
+  @ReactMethod
+  fun getCapabilities(promise: Promise) {
+    try {
+      val m = Arguments.createMap()
+      m.putBoolean("peakRefreshRate", BoostActions.isPeakRefreshSupported(ctx))
+      m.putBoolean("samsung", Build.MANUFACTURER.equals("samsung", ignoreCase = true))
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.reject("CAPS_ERR", e)
+    }
+  }
+
   /** Undo any settings left applied if the app was killed mid-boost. Idempotent. */
   @ReactMethod
   fun reconcile(promise: Promise) {
@@ -475,9 +505,9 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         }
         present = true
         components.pushString(label)
-        if (setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER &&
-          setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-        ) {
+        val disabled = setting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER ||
+          setting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        if (!disabled && p != "com.samsung.android.game.gamehome") {
           anyEnabled = true
         }
       }
@@ -748,6 +778,10 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     conn.connectTimeout = 30000
     conn.readTimeout = 30000
     conn.connect()
+    if (conn.responseCode != 200) {
+      conn.disconnect()
+      throw java.io.IOException("Update download failed (HTTP ${conn.responseCode})")
+    }
     val total = conn.contentLength
     conn.inputStream.use { input ->
       java.io.FileOutputStream(file).use { output ->
@@ -844,11 +878,19 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   private fun currentForegroundApp(): String? {
     if (!hasUsageAccess()) return null
+    // Last MOVE_TO_FOREGROUND event (the lastTimeUsed heuristic picked the wrong app
+    // whenever another app had a newer event than a game that stayed on screen).
     return try {
       val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
       val now = System.currentTimeMillis()
-      val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 60_000, now)
-      stats?.maxByOrNull { it.lastTimeUsed }?.packageName
+      val events = usm.queryEvents(now - 6 * 60 * 60 * 1000L, now)
+      val ev = android.app.usage.UsageEvents.Event()
+      var last: String? = null
+      while (events.hasNextEvent()) {
+        events.getNextEvent(ev)
+        if (ev.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) last = ev.packageName
+      }
+      last
     } catch (e: Exception) {
       null
     }

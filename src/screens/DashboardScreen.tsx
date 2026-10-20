@@ -75,12 +75,9 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
     store.refreshPermissions();
     store.refreshShizuku();
     loadTelemetry();
-    CantosHub.isBoostRunning().then(running => {
-      if (running !== boostRunning && mounted.current) {
-        // keep store in sync if the service was already running
-        if (running) store.startBoost();
-      }
-    });
+    // Only read the service state — re-starting a running boost here used to re-run
+    // Free RAM / Shizuku and reset Auto mode every time this tab was opened.
+    store.syncBoost();
     const id = setInterval(loadTelemetry, 2000);
     return () => {
       mounted.current = false;
@@ -346,7 +343,7 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
             <Text style={styles.link}>Permissions</Text>
           </Pressable>
         }>
-        {TOGGLES.map(t => {
+        {TOGGLES.filter(t => t.key !== 'peakRefreshRate' || store.capabilities?.peakRefreshRate !== false).map(t => {
           const unlocked = isToggleUnlocked(t.key, permissions);
           return (
             <ToggleRow
@@ -362,6 +359,13 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
           );
         })}
       </SectionCard>
+
+      {store.capabilities?.peakRefreshRate === false && (
+        <Text style={styles.footnote}>
+          Refresh rate: your phone manages this itself — set Settings › Display › Motion
+          smoothness to Adaptive for up to 120 Hz in games.
+        </Text>
+      )}
 
       <Text style={styles.footnote}>
         100% no-root. CantosHub only uses permissions you grant — it never modifies the

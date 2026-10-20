@@ -19,6 +19,7 @@ import { AppState } from 'react-native';
 import { CHANGELOG } from '../changelog';
 import {
   BoostProfile,
+  Capabilities,
   CantosHub,
   GameBoosterStatus,
   PermissionStatus,
@@ -135,6 +136,9 @@ type Store = {
   dismissWhatsNew: () => void;
 
   boostRunning: boolean;
+  /** Re-read whether the boost service is actually running (e.g. stopped from the notification). */
+  syncBoost: () => Promise<void>;
+  capabilities: Capabilities | null;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
   /** Start a manual boost using a specific profile (used by Games → Boost & Play). */
@@ -159,6 +163,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   const activeProfile = useMemo(
@@ -366,50 +371,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // matching profile (incl. its Shizuku parts) itself.
       await CantosHub.startAutoBoost(profilesRef.current, overlay, freeRam);
     } else {
-      const p = activeRef.current;
-      await CantosHub.startBoost(p, overlay, freeRam);
-      const usesShizuku =
-        (p.resolutionScale ?? 1) < 1 || (p.freezeApps?.length ?? 0) > 0;
-      if (shizukuRef.current?.granted && usesShizuku) {
-        try {
-          await CantosHub.applyShizukuProfile(p);
-        } catch {
-          // best-effort; no-root toggles still applied
-        }
-      }
+      // The service applies the no-root toggles and, with Shizuku, the Pro parts.
+      await CantosHub.startBoost(activeRef.current, overlay, freeRam);
     }
     setBoostRunning(true);
   }, []);
 
   const stopBoost = useCallback(async () => {
-    await CantosHub.stopBoost();
-    try {
-      await CantosHub.revertShizukuProfile();
-    } catch {
-      // ignore
-    }
+    await CantosHub.stopBoost(); // the service reverts everything, incl. Shizuku parts
     setBoostRunning(false);
+  }, []);
+
+  const syncBoost = useCallback(async () => {
+    try {
+      setBoostRunning(await CantosHub.isBoostRunning());
+    } catch {
+      // keep current value
+    }
   }, []);
 
   const boostGame = useCallback(async (profile: BoostProfile) => {
     setActiveProfileId(profile.id);
     await CantosHub.startBoost(profile, overlayRef.current, freeRamRef.current);
-    const usesShizuku =
-      (profile.resolutionScale ?? 1) < 1 || (profile.freezeApps?.length ?? 0) > 0;
-    if (shizukuRef.current?.granted && usesShizuku) {
-      try {
-        await CantosHub.applyShizukuProfile(profile);
-      } catch {
-        // best-effort
-      }
-    }
     setBoostRunning(true);
   }, []);
 
   const toggle = useCallback(
     async (key: ToggleKey, value: boolean) => {
       updateProfile(activeRef.current.id, { [key]: value });
-      if (boostRunning) {
+      if (boostRunning && !autoRef.current) {
         try {
           await applyToggleNative(key, value);
         } catch {
@@ -423,7 +413,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // On launch, undo anything left applied if the app was killed mid-boost,
   // and prime permission/Shizuku status.
   useEffect(() => {
-    CantosHub.reconcile().catch(() => {});
+    // Sync with the real service first; reconcile only undoes leftovers when it isn't running.
+    CantosHub.isBoostRunning()
+      .then(setBoostRunning)
+      .catch(() => {})
+      .finally(() => CantosHub.reconcile().catch(() => {}));
+    CantosHub.getCapabilities().then(setCapabilities).catch(() => {});
     refreshPermissions();
     refreshShizuku();
     refreshGameBooster();
@@ -435,13 +430,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', s => {
       if (s === 'active') {
+        syncBoost();
         refreshPermissions();
         refreshShizuku();
         refreshGameBooster();
       }
     });
     return () => sub.remove();
-  }, [refreshPermissions, refreshShizuku, refreshGameBooster]);
+  }, [refreshPermissions, refreshShizuku, refreshGameBooster, syncBoost]);
+
+  // Profile edits reach a running Auto boost right away (no stop/start needed).
+  useEffect(() => {
+    if (!hydrated || !boostRunning || !autoMode) return;
+    const t = setTimeout(() => {
+      CantosHub.updateAutoProfiles(profiles).catch(() => {});
+    }, 400);
+    return () => clearTimeout(t);
+  }, [hydrated, boostRunning, autoMode, profiles]);
 
   // After an update installs, show "What's new" once for the new version.
   useEffect(() => {
@@ -561,6 +566,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     whatsNew,
     dismissWhatsNew,
     boostRunning,
+    syncBoost,
+    capabilities,
     startBoost,
     stopBoost,
     boostGame,

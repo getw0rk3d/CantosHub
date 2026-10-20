@@ -40,6 +40,7 @@ class BoostService : Service() {
     const val ACTION_START = "com.cantoshub.action.START"
     const val ACTION_START_AUTO = "com.cantoshub.action.START_AUTO"
     const val ACTION_STOP = "com.cantoshub.action.STOP"
+    const val ACTION_UPDATE_PROFILES = "com.cantoshub.action.UPDATE_PROFILES"
     const val EXTRA_PROFILE = "profile"
     const val EXTRA_PROFILES = "profiles"
     const val EXTRA_OVERLAY = "overlay"
@@ -47,6 +48,9 @@ class BoostService : Service() {
     private const val CHANNEL_ID = "cantoshub_boost"
     private const val NOTIF_ID = 7341
     private const val POLL_MS = 4000L
+    private const val RESTART_PREFS = "cantoshub_service"
+    private const val KEY_LAST_ACTION = "last_action"
+    private const val KEY_LAST_EXTRAS = "last_extras"
 
     // Require this many consecutive ticks on a real, different app before we
     // conclude the user left the game and revert — absorbs transient blips
@@ -93,15 +97,70 @@ class BoostService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    when (intent?.action) {
+    if (intent == null) {
+      val restored = restoreLastStart()
+      if (restored == null) {
+        // Nothing to resume: satisfy the foreground-service contract, then stop.
+        createChannel()
+        startForegroundCompat(buildNotification("Stopping", ""))
+        stopBoost()
+        return START_NOT_STICKY
+      }
+      if (restored.action == ACTION_START_AUTO) startAuto(restored) else startManual(restored)
+      return START_STICKY
+    }
+    when (intent.action) {
       ACTION_STOP -> {
         stopBoost()
         return START_NOT_STICKY
       }
-      ACTION_START_AUTO -> startAuto(intent)
-      else -> startManual(intent)
+      ACTION_UPDATE_PROFILES -> {
+        // Live profile edits while Auto is running: swap the list without resetting
+        // the current game's state (no re-boost, no second Free RAM).
+        if (isRunning && auto) {
+          profiles = parseArray(intent.getStringExtra(EXTRA_PROFILES))
+          rememberStart(ACTION_START_AUTO, intent.getStringExtra(EXTRA_PROFILES), null)
+        }
+        return START_STICKY
+      }
+      ACTION_START_AUTO -> {
+        rememberStart(ACTION_START_AUTO, intent.getStringExtra(EXTRA_PROFILES), intent)
+        startAuto(intent)
+      }
+      else -> {
+        rememberStart(ACTION_START, intent.getStringExtra(EXTRA_PROFILE), intent)
+        startManual(intent)
+      }
     }
     return START_STICKY
+  }
+
+  /** Persist the last start so a system restart (null intent) resumes the same boost. */
+  private fun rememberStart(action: String, payload: String?, intent: Intent?) {
+    val sp = getSharedPreferences(RESTART_PREFS, Context.MODE_PRIVATE)
+    val prev = try { JSONObject(sp.getString(KEY_LAST_EXTRAS, "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+    val extras = JSONObject()
+      .put("payload", payload ?: prev.optString("payload", ""))
+      .put("overlay", intent?.getBooleanExtra(EXTRA_OVERLAY, false) ?: prev.optBoolean("overlay", false))
+    sp.edit().putString(KEY_LAST_ACTION, action).putString(KEY_LAST_EXTRAS, extras.toString()).apply()
+  }
+
+  private fun restoreLastStart(): Intent? {
+    val sp = getSharedPreferences(RESTART_PREFS, Context.MODE_PRIVATE)
+    val action = sp.getString(KEY_LAST_ACTION, null) ?: return null
+    val extras = try { JSONObject(sp.getString(KEY_LAST_EXTRAS, "{}") ?: "{}") } catch (e: Exception) { return null }
+    val payload = extras.optString("payload", "")
+    if (payload.isEmpty()) return null
+    return Intent(this, BoostService::class.java).apply {
+      this.action = action
+      putExtra(if (action == ACTION_START_AUTO) EXTRA_PROFILES else EXTRA_PROFILE, payload)
+      putExtra(EXTRA_OVERLAY, extras.optBoolean("overlay", false))
+      putExtra(EXTRA_FREERAM, false) // never kill apps just because the service was restarted
+    }
+  }
+
+  private fun forgetStart() {
+    getSharedPreferences(RESTART_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
   }
 
   private fun startManual(intent: Intent?) {
@@ -119,6 +178,9 @@ class BoostService : Service() {
     // as the user taps Start.
     Thread {
       try { BoostActions.applyProfile(this, profile) } catch (e: Exception) { }
+      if (ShizukuManager.hasPermission()) {
+        try { ShizukuActions.apply(this, profile) { } } catch (e: Exception) { }
+      }
       val pkg = profile.optString("packageName", "")
       if (pkg.isNotBlank()) StatsStore.recordSession(this, pkg)
       if (freeRamOnBoost) {
@@ -153,6 +215,7 @@ class BoostService : Service() {
       workThread = HandlerThread("cantoshub-watch").also { it.start() }
       workHandler = Handler(workThread!!.looper)
     }
+    workHandler?.removeCallbacks(tick)
     workHandler?.post(tick)
   }
 
@@ -226,6 +289,7 @@ class BoostService : Service() {
   }
 
   private fun stopBoost() {
+    forgetStart()
     workHandler?.removeCallbacksAndMessages(null)
     workThread?.quitSafely()
     workThread = null

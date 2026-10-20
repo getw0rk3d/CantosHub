@@ -23,6 +23,12 @@ object BoostActions {
   private const val KEY_DND = "dnd_filter"
   private const val KEY_PEAK = "peak_refresh"
   private const val KEY_MIN = "min_refresh"
+  // Which settings a boost actually changed — revert only touches these, so a
+  // brightness you adjusted mid-game (with Max brightness off) isn't yanked back.
+  private const val TOUCHED_DND = "touched_dnd"
+  private const val TOUCHED_BRIGHTNESS = "touched_brightness"
+  private const val TOUCHED_TIMEOUT = "touched_timeout"
+  private const val TOUCHED_PEAK = "touched_peak"
 
   private const val AWAKE_TIMEOUT_MS = 30 * 60 * 1000 // keep screen on up to 30 min
   private const val DEFAULT_TIMEOUT_MS = 60_000
@@ -35,37 +41,53 @@ object BoostActions {
     setPeakRefreshRate(ctx, profile.optBoolean("peakRefreshRate", false))
   }
 
+  /**
+   * True if this device exposes the AOSP peak_refresh_rate setting. Samsung (One UI)
+   * does not — refresh is its own "Motion smoothness" (Adaptive already goes to 120 Hz)
+   * and the hidden key can't be written by apps, so the toggle would silently do nothing.
+   */
+  fun isPeakRefreshSupported(ctx: Context): Boolean = try {
+    Settings.System.getString(ctx.contentResolver, "peak_refresh_rate") != null
+  } catch (_: Exception) {
+    false
+  }
+
+  private fun markTouched(ctx: Context, key: String) {
+    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(key, true).apply()
+  }
+
   fun revert(ctx: Context) {
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     if (!sp.getBoolean(KEY_HAS, false)) return
     val cr = ctx.contentResolver
 
-    try {
-      val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      if (nm.isNotificationPolicyAccessGranted) {
-        nm.setInterruptionFilter(
-          sp.getInt(KEY_DND, NotificationManager.INTERRUPTION_FILTER_ALL),
-        )
+    // Old snapshots (before touched-tracking) have no flags: treat everything as touched.
+    val legacy = listOf(TOUCHED_DND, TOUCHED_BRIGHTNESS, TOUCHED_TIMEOUT, TOUCHED_PEAK).none { sp.contains(it) }
+    fun touched(k: String) = legacy || sp.getBoolean(k, false)
+
+    if (touched(TOUCHED_DND) && sp.contains(KEY_DND)) {
+      try {
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (nm.isNotificationPolicyAccessGranted) nm.setInterruptionFilter(sp.getInt(KEY_DND, NotificationManager.INTERRUPTION_FILTER_ALL))
+      } catch (_: Exception) {
       }
-    } catch (_: Exception) {
     }
 
     if (Settings.System.canWrite(ctx)) {
-      try {
-        Settings.System.putInt(
-          cr,
-          Settings.System.SCREEN_BRIGHTNESS_MODE,
-          sp.getInt(KEY_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC),
-        )
-        Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, sp.getInt(KEY_BRIGHTNESS, 128))
-        Settings.System.putInt(
-          cr,
-          Settings.System.SCREEN_OFF_TIMEOUT,
-          sp.getInt(KEY_TIMEOUT, DEFAULT_TIMEOUT_MS),
-        )
-        Settings.System.putFloat(cr, "peak_refresh_rate", sp.getFloat(KEY_PEAK, 0f))
-        Settings.System.putFloat(cr, "min_refresh_rate", sp.getFloat(KEY_MIN, 0f))
-      } catch (_: Exception) {
+      if (touched(TOUCHED_BRIGHTNESS)) {
+        try {
+          if (sp.contains(KEY_BRIGHTNESS_MODE)) Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, sp.getInt(KEY_BRIGHTNESS_MODE, 1))
+          if (sp.contains(KEY_BRIGHTNESS)) Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, sp.getInt(KEY_BRIGHTNESS, 128))
+        } catch (_: Exception) {
+        }
+      }
+      if (touched(TOUCHED_TIMEOUT) && sp.contains(KEY_TIMEOUT)) {
+        try { Settings.System.putInt(cr, Settings.System.SCREEN_OFF_TIMEOUT, sp.getInt(KEY_TIMEOUT, DEFAULT_TIMEOUT_MS)) } catch (_: Exception) {}
+      }
+      // Only restore refresh keys that existed before — writing 0 into a key the device
+      // never had could change its refresh behavior.
+      if (touched(TOUCHED_PEAK) && sp.contains(KEY_PEAK)) {
+        try { Settings.System.putFloat(cr, "peak_refresh_rate", sp.getFloat(KEY_PEAK, 0f)) } catch (_: Exception) {}
       }
     }
 
@@ -76,6 +98,7 @@ object BoostActions {
     val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (!nm.isNotificationPolicyAccessGranted) return false
     ensureSnapshot(ctx)
+    if (enable) markTouched(ctx, TOUCHED_DND)
     nm.setInterruptionFilter(
       if (enable) {
         NotificationManager.INTERRUPTION_FILTER_PRIORITY
@@ -92,13 +115,15 @@ object BoostActions {
     val cr = ctx.contentResolver
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     if (enable) {
+      markTouched(ctx, TOUCHED_BRIGHTNESS)
       Settings.System.putInt(
         cr,
         Settings.System.SCREEN_BRIGHTNESS_MODE,
         Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
       )
       Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, 255)
-    } else {
+    } else if (sp.getBoolean(TOUCHED_BRIGHTNESS, false)) {
+      // Only undo brightness if a boost raised it; otherwise leave the user's level alone.
       Settings.System.putInt(
         cr,
         Settings.System.SCREEN_BRIGHTNESS_MODE,
@@ -114,6 +139,7 @@ object BoostActions {
     ensureSnapshot(ctx)
     val cr = ctx.contentResolver
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    if (enable) markTouched(ctx, TOUCHED_TIMEOUT) else if (!sp.getBoolean(TOUCHED_TIMEOUT, false)) return true
     Settings.System.putInt(
       cr,
       Settings.System.SCREEN_OFF_TIMEOUT,
@@ -129,6 +155,7 @@ object BoostActions {
    */
   fun setPeakRefreshRate(ctx: Context, enable: Boolean): Boolean {
     if (!Settings.System.canWrite(ctx)) return false
+    if (!isPeakRefreshSupported(ctx)) return false // e.g. Samsung: never create the key
     ensureSnapshot(ctx)
     val cr = ctx.contentResolver
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -137,6 +164,8 @@ object BoostActions {
       // min == peak pins the panel to a fixed rate, which can trigger a disruptive
       // display mode switch (black-frame/hitch) and hurts battery. A higher peak lets
       // the panel go up to it while staying adaptive. Skip the write if unchanged.
+      if (!enable && !sp.getBoolean(TOUCHED_PEAK, false)) return true
+      if (enable) markTouched(ctx, TOUCHED_PEAK)
       val target = if (enable) 120f else sp.getFloat(KEY_PEAK, 60f)
       val current = try {
         Settings.System.getFloat(cr, "peak_refresh_rate")

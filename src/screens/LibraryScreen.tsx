@@ -140,12 +140,19 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
         }>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Games</Text>
-          {showAll && <Badge text="ALL APPS" color={colors.textDim} />}
+          <Pressable
+            onPress={() => {
+              const next = !showAll;
+              setShowAll(next);
+              load(next);
+            }}>
+            <Badge text={showAll ? 'ALL APPS ✓' : 'ALL APPS'} color={showAll ? colors.accent : colors.textDim} />
+          </Pressable>
         </View>
         <Text style={styles.sub}>
           {showAll
-            ? 'Showing every launchable app.'
-            : 'Apps Android tags as games. Bind one to a profile for Auto mode.'}
+            ? 'Showing every launchable app — use this if a game is missing.'
+            : 'Apps Android tags as games. Missing one? Tap ALL APPS.'}
         </Text>
 
         {usageOff && (

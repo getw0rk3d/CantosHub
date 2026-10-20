@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">CantosHub</string>
     <string name="kids_a11y_label">CantosHub Kids lock</string>
-    <string name="kids_a11y_description">Only used while Kids Mode is on: keeps your kid in the apps you chose, closes the notification shade and brings back the kids screen. Works without Shizuku. CantosHub does not read what is on your screen.</string>
+    <string name="kids_a11y_description">Only used while Kids Mode is on: keeps your kid in the apps you chose, closes the notification shade and brings back the kids screen. Works without Shizuku. It only checks which window is open (to spot the notification shade); CantosHub never reads or saves what is on your screen.</string>
 </resources>

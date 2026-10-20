@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.app.usage.UsageStatsManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -216,6 +217,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       m.putBoolean("deviceSecure", km.isDeviceSecure)
       m.putBoolean("strongLock", ShizukuManager.hasPermission())
       m.putBoolean("a11yLock", KidsAccessibilityService.isEnabled(ctx))
+      m.putString("restricted", restrictedSettingsState())
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("KIDS_CFG_ERR", e)
@@ -294,15 +296,44 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
-  /** Accessibility settings, to turn on the Kids lock helper (no Shizuku needed). */
+  /**
+   * Open the Kids lock switch itself (its own page in Accessibility) so the parent
+   * doesn't have to hunt for it; falls back to the Accessibility list.
+   */
   @ReactMethod
   fun openAccessibilitySettings(promise: Promise) {
-    try {
-      ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-      promise.resolve(true)
-    } catch (e: Exception) {
-      promise.resolve(false)
+    val me = ComponentName(ctx, KidsAccessibilityService::class.java).flattenToString()
+    val direct = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+      .putExtra(Intent.EXTRA_COMPONENT_NAME, me)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    for (i in listOf(direct, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) {
+      try {
+        ctx.startActivity(i)
+        promise.resolve(true)
+        return
+      } catch (e: Exception) {
+      }
     }
+    promise.resolve(false)
+  }
+
+  /**
+   * "allowed" / "denied" / "unknown": Android 13+ blocks Accessibility for apps installed
+   * outside an app store until the owner taps App info -> menu -> Allow restricted settings.
+   */
+  private fun restrictedSettingsState(): String = try {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      "allowed"
+    } else {
+      val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+      when (ops.unsafeCheckOpNoThrow("android:access_restricted_settings", Process.myUid(), ctx.packageName)) {
+        AppOpsManager.MODE_ALLOWED -> "allowed"
+        AppOpsManager.MODE_ERRORED, AppOpsManager.MODE_IGNORED -> "denied"
+        else -> "unknown"
+      }
+    }
+  } catch (e: Exception) {
+    "unknown"
   }
 
   private fun stopKidsNow() {

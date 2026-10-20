@@ -9,6 +9,7 @@ import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
 import { AppPickerModal } from './ProfilesScreen';
+import { useKidsLockSetup } from './useKidsLockSetup';
 
 type PinStep = null | 'old' | 'new' | 'confirm';
 
@@ -23,6 +24,8 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
   const [newPin, setNewPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const { refreshKids } = store;
+  const startLockSetup = useKidsLockSetup(refreshKids);
 
   useEffect(() => {
     store.refreshKids();
@@ -71,7 +74,7 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
         'Notification shade stays open',
         'Without Kids lock (or Shizuku) Android lets your kid pull down the notification shade and quick settings. Turn on Kids lock first for a full lock.',
         [
-          { text: 'Turn on Kids lock', onPress: () => CantosHub.openAccessibilitySettings() },
+          { text: 'Turn on Kids lock', onPress: startLockSetup },
           { text: 'Start anyway', onPress: doStart },
         ],
       );
@@ -176,21 +179,11 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
         <Text style={styles.dim}>
           {kids?.a11yLock
             ? 'On. Works on mobile data too: closes the notification shade and Samsung Wallet’s swipe-up card, and always brings your kid back to their apps.'
-            : 'Shizuku needs Wi-Fi to start, so on mobile data the lock is weaker. Turn on “CantosHub Kids lock” in Accessibility (Installed apps) for a strong lock anywhere. It does nothing while Kids Mode is off.'}
-          {!kids?.a11yLock
-            ? '\n\nIf the switch is greyed out or says “Restricted setting”: tap it once, then tap Open App info below → ⋮ (top right) → Allow restricted settings, confirm, and turn on Kids lock again.'
-            : ''}
+            : 'Shizuku needs Wi-Fi to start, so on mobile data the lock is weaker. Turn on Kids lock for a strong lock anywhere — CantosHub walks you through it. It does nothing while Kids Mode is off.'}
         </Text>
         {!kids?.a11yLock && (
           <View style={{ marginTop: spacing.md }}>
-            <PrimaryButton
-              title="Turn on Kids lock"
-              variant="outline"
-              onPress={() => CantosHub.openAccessibilitySettings()}
-            />
-            <Pressable onPress={() => CantosHub.openPermissionSettings('appDetails')} hitSlop={8} style={{ marginTop: spacing.sm }}>
-              <Text style={[styles.link, { textAlign: 'center' }]}>Open App info</Text>
-            </Pressable>
+            <PrimaryButton title="Turn on Kids lock" variant="outline" onPress={startLockSetup} />
           </View>
         )}
       </SectionCard>

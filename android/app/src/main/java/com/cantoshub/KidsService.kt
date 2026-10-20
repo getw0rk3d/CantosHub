@@ -201,6 +201,7 @@ class KidsService : Service() {
       try {
         check()
         if (++ticks % 6 == 0) stopWalletSwipe()
+        KidsAccessibilityService.instance?.guardShade()
       } catch (e: Exception) {
       }
       handler?.postDelayed(this, POLL_MS)

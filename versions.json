@@ -1,6 +1,6 @@
 {
-  "versionCode": 17,
-  "versionName": "1.3.0",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.0/CantosHub-1.3.0.apk",
-  "notes": "NEW: Kids Mode — lock the phone to just the apps you pick, with a parent PIN. Stronger lock with Shizuku (no shade/Recents, kids Home screen)."
+  "versionCode": 18,
+  "versionName": "1.3.1",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.1/CantosHub-1.3.1.apk",
+  "notes": "NEW: Kids lock — strong Kids Mode lock with no Shizuku needed (works on mobile data). NEW: quick add — new-app prompt, Share from the store, and Add game on the icon. Fixes: Wallet swipe-up, stuck Home, stuck Ask a grown-up screen."
 }

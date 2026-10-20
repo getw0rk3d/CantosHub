@@ -10,6 +10,7 @@ import {
   Switch,
   Text,
   TextInput,
+  Keyboard,
   View,
 } from 'react-native';
 import { Badge, PrimaryButton, SectionCard } from '../components/ui';
@@ -55,7 +56,7 @@ export default function ProfilesScreen() {
   const gameProfile = store.profiles.find(p => p.id === gamePickerFor) || null;
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Profiles</Text>
       <Text style={styles.sub}>
         Save presets per game or mode. Bind a game below and Auto mode applies it the moment
@@ -299,7 +300,8 @@ export function AppPickerModal({
                   return !q || a.label.toLowerCase().includes(q) || a.packageName.toLowerCase().includes(q);
                 })
                 .sort((a, b) => Number(selected.has(b.packageName)) - Number(selected.has(a.packageName)))}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="on-drag"
               keyExtractor={item => item.packageName}
               style={styles.modalList}
               renderItem={({ item }) => {
@@ -322,12 +324,22 @@ export function AppPickerModal({
 
           <View style={styles.modalActions}>
             <View style={styles.modalBtn}>
-              <PrimaryButton title="Cancel" variant="outline" onPress={onClose} />
+              <PrimaryButton
+                title="Cancel"
+                variant="outline"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  onClose();
+                }}
+              />
             </View>
             <View style={styles.modalBtn}>
               <PrimaryButton
                 title={multiSelect && selected.size > 0 ? `Save (${selected.size})` : 'Save'}
-                onPress={() => onSave(Array.from(selected))}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  onSave(Array.from(selected));
+                }}
               />
             </View>
           </View>

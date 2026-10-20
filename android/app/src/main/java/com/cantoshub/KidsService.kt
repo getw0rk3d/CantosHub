@@ -43,7 +43,13 @@ class KidsService : Service() {
     private const val CHANNEL_ID = "cantoshub_kids"
     private const val NOTIF_ID = 7342
     private const val POLL_MS = 500L
+    // The kids screen comes back right away; keep "Ask a grown-up" up long enough to read.
+    private const val MIN_COVER_MS = 2500L
     const val HOME_ALIAS = "com.cantoshub.KidsHome"
+
+    // Samsung Wallet's swipe-up-from-the-bottom card. It's an always-running service, so
+    // blocking the Wallet screen afterwards still flashed the card; we stop the service.
+    private const val WALLET = "com.samsung.android.spay"
 
     // Never block these: system UI, Android's own dialogs, runtime-permission prompts
     // and Google sign-in / purchase-free popups that allowed apps show.
@@ -59,6 +65,19 @@ class KidsService : Service() {
     var isRunning = false
       private set
 
+    @Volatile
+    var instance: KidsService? = null
+      private set
+
+    fun isCallActive(ctx: Context): Boolean = try {
+      when ((ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode) {
+        AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION, AudioManager.MODE_RINGTONE -> true
+        else -> false
+      }
+    } catch (e: Exception) {
+      false
+    }
+
     fun start(ctx: Context) {
       val i = Intent(ctx, KidsService::class.java).setAction(ACTION_START)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i) else ctx.startService(i)
@@ -68,16 +87,47 @@ class KidsService : Service() {
       ctx.startService(Intent(ctx, KidsService::class.java).setAction(ACTION_STOP))
     }
 
-    /** Undo the Shizuku-level changes (system bar + Home). Safe to call repeatedly. */
+    /**
+     * Undo Kids Mode's system changes. Safe to call repeatedly.
+     * - The Home alias is our own component, so it's switched off WITHOUT needing Shizuku;
+     *   Android then falls back to the normal launcher. (Requiring Shizuku here left
+     *   CantosHub stuck as Home whenever Shizuku had died, e.g. after a reboot.)
+     * - System-bar flags die with the Shizuku process anyway; reset them if it's alive.
+     */
     fun releaseSystemLock(ctx: Context) {
-      if (!ShizukuManager.hasPermission()) return
-      ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { }
-      val prev = KidsPrefs.prevHome(ctx)
-      if (prev.isNotEmpty()) {
-        ShizukuManager.exec(ctx, listOf("cmd", "package", "set-home-activity", prev)) { }
-      }
       setHomeAliasEnabled(ctx, false)
+      if (ShizukuManager.hasPermission()) {
+        ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { }
+        val prev = KidsPrefs.prevHome(ctx)
+        if (prev.isNotEmpty()) {
+          ShizukuManager.exec(ctx, listOf("cmd", "package", "set-home-activity", prev)) { }
+        }
+      }
       KidsPrefs.setPrevHome(ctx, "")
+      restartWalletIfStopped(ctx)
+    }
+
+    /** Opening Wallet once brings its swipe-up shortcut back; then return to CantosHub. */
+    private fun restartWalletIfStopped(ctx: Context) {
+      if (!KidsPrefs.walletStopped(ctx)) return
+      KidsPrefs.setWalletStopped(ctx, false)
+      val launch = ctx.packageManager.getLaunchIntentForPackage(WALLET) ?: return
+      try {
+        ctx.startActivity(launch.addFlags(
+          // Not left behind as an extra card in Recents.
+          Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or Intent.FLAG_ACTIVITY_NO_ANIMATION,
+        ))
+        Handler(Looper.getMainLooper()).postDelayed({
+          try {
+            ctx.startActivity(
+              Intent(ctx, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            )
+          } catch (e: Exception) {
+          }
+        }, 1500)
+      } catch (e: Exception) {
+      }
     }
 
     private fun setHomeAliasEnabled(ctx: Context, enabled: Boolean) {
@@ -96,9 +146,11 @@ class KidsService : Service() {
   private var handler: Handler? = null
   private val main = Handler(Looper.getMainLooper())
   private var cover: LinearLayout? = null
+  private var coverShownAt = 0L
   private var lastFg: String? = null
   private var lastQuery = 0L
   private var lastBounce = 0L
+  private var ticks = 0
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -115,6 +167,7 @@ class KidsService : Service() {
       return START_NOT_STICKY
     }
     isRunning = true
+    instance = this
     applySystemLock()
     if (thread == null) {
       thread = HandlerThread("cantoshub-kids").also { it.start() }
@@ -147,13 +200,37 @@ class KidsService : Service() {
       if (!isRunning) return
       try {
         check()
+        if (++ticks % 6 == 0) stopWalletSwipe()
+        KidsAccessibilityService.instance?.guardShade()
       } catch (e: Exception) {
       }
       handler?.postDelayed(this, POLL_MS)
     }
   }
 
+  /** Called by [KidsAccessibilityService] on every window change: check without waiting. */
+  fun checkSoon() {
+    val h = handler ?: return
+    h.postDelayed(::safeCheck, 150)
+    h.postDelayed(::safeCheck, 450)
+  }
+
+  private fun safeCheck() {
+    if (!isRunning) return
+    try {
+      check()
+    } catch (e: Exception) {
+    }
+  }
+
   private fun check() {
+    // CantosHub's own screen is showing: never keep the cover up, even if Android's
+    // usage events still name the blocked app (that left kids stuck on the cover).
+    if (MainActivity.resumed) {
+      lastFg = packageName
+      hideCover()
+      return
+    }
     val fg = foreground() ?: return
     if (isOk(fg)) {
       hideCover()
@@ -161,9 +238,19 @@ class KidsService : Service() {
     }
     showCover()
     val now = System.currentTimeMillis()
-    if (now - lastBounce > 1500) {
+    if (now - lastBounce > 1000) {
       lastBounce = now
       bringKidsScreen()
+    }
+  }
+
+  private fun stopWalletSwipe() {
+    if (!ShizukuManager.hasPermission()) return
+    ShizukuManager.exec(
+      this,
+      listOf("sh", "-c", "pidof $WALLET >/dev/null && am force-stop $WALLET && echo STOPPED"),
+    ) { out ->
+      if (out?.contains("STOPPED") == true) KidsPrefs.setWalletStopped(this, true)
     }
   }
 
@@ -171,13 +258,15 @@ class KidsService : Service() {
     if (pkg == packageName || pkg in ALWAYS_OK) return true
     if (pkg in KidsPrefs.allowed(this)) return true
     // Calls must always get through (also emergency calls).
-    if (isCallActive() || Cleanup.isCallApp(pkg)) return true
+    if (isCallActive(this) || Cleanup.isCallApp(pkg)) return true
     // The phone's own lock screen / PIN check used as the "forgot Kids PIN" fallback.
     if (KidsPrefs.systemAllowed(this) && (pkg.contains("settings") || pkg.contains("biometric"))) return true
     return false
   }
 
   private fun bringKidsScreen() {
+    // The accessibility helper may always open activities; a plain service may be blocked.
+    if (KidsAccessibilityService.instance?.showKidsScreen() == true) return
     try {
       startActivity(
         Intent(this, MainActivity::class.java).addFlags(
@@ -204,15 +293,6 @@ class KidsService : Service() {
     } catch (e: Exception) {
       lastFg
     }
-  }
-
-  private fun isCallActive(): Boolean = try {
-    when ((getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode) {
-      AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION, AudioManager.MODE_RINGTONE -> true
-      else -> false
-    }
-  } catch (e: Exception) {
-    false
   }
 
   // --- full-screen cover shown over a blocked app ---
@@ -255,7 +335,10 @@ class KidsService : Service() {
           setColor(Color.parseColor("#FFD43B"))
         }
         setPadding(70, 30, 70, 30)
-        setOnClickListener { bringKidsScreen() }
+        setOnClickListener {
+          bringKidsScreen()
+          hideCover(force = true)
+        }
       })
       val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -273,14 +356,16 @@ class KidsService : Service() {
       try {
         wm.addView(layout, lp)
         cover = layout
+        coverShownAt = System.currentTimeMillis()
       } catch (e: Exception) {
         cover = null
       }
     }
   }
 
-  private fun hideCover() {
+  private fun hideCover(force: Boolean = false) {
     main.post {
+      if (!force && System.currentTimeMillis() - coverShownAt < MIN_COVER_MS) return@post
       cover?.let {
         try {
           (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
@@ -293,11 +378,12 @@ class KidsService : Service() {
 
   private fun shutdown() {
     isRunning = false
+    instance = null
     handler?.removeCallbacksAndMessages(null)
     thread?.quitSafely()
     thread = null
     handler = null
-    hideCover()
+    hideCover(force = true)
     releaseSystemLock(this)
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
@@ -305,9 +391,10 @@ class KidsService : Service() {
 
   override fun onDestroy() {
     isRunning = false
+    if (instance === this) instance = null
     handler?.removeCallbacksAndMessages(null)
     thread?.quitSafely()
-    hideCover()
+    hideCover(force = true)
     super.onDestroy()
   }
 

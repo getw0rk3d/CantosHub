@@ -61,6 +61,10 @@ export default function ShizukuSetup({
                   Open Developer Options and enable{' '}
                   <Text style={styles.bold}>Wireless debugging</Text>. (If you don't see Developer
                   Options, open Settings → About phone and tap Build number 7 times first.)
+                  {'\n\n'}Wireless debugging only works on Wi-Fi (any network, internet not needed), so
+                  start Shizuku while on Wi-Fi; once started it usually keeps running on mobile data
+                  until the phone restarts. Everything else in CantosHub works without it, and Kids Mode has its own
+                  Kids lock (Kids tab) that needs no Shizuku.
                 </Text>
                 <View style={styles.stepBtn}>
                   <PrimaryButton

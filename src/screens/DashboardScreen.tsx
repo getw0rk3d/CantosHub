@@ -52,11 +52,12 @@ export default function DashboardScreen({
   const mounted = useRef(true);
   const [games, setGames] = useState<GameInfo[]>([]);
 
+  const addedKey = store.addedGames.map(a => a.packageName).join(',');
   useEffect(() => {
-    CantosHub.listGames()
+    CantosHub.listGames(addedKey ? addedKey.split(',') : [])
       .then(list => mounted.current && setGames(list))
       .catch(() => {});
-  }, []);
+  }, [addedKey]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('CantosHubUpdateProgress', (pct: number) =>

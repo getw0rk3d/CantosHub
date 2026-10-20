@@ -9,6 +9,7 @@ import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
 import { AppPickerModal } from './ProfilesScreen';
+import { useKidsLockSetup } from './useKidsLockSetup';
 
 type PinStep = null | 'old' | 'new' | 'confirm';
 
@@ -23,6 +24,8 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
   const [newPin, setNewPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const { refreshKids } = store;
+  const startLockSetup = useKidsLockSetup(refreshKids);
 
   useEffect(() => {
     store.refreshKids();
@@ -65,7 +68,22 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
     }
   };
 
-  const onStart = async () => {
+  const onStart = () => {
+    if (!kids?.strongLock && !kids?.a11yLock) {
+      Alert.alert(
+        'Notification shade stays open',
+        'Without Kids lock (or Shizuku) Android lets your kid pull down the notification shade and quick settings. Turn on Kids lock first for a full lock.',
+        [
+          { text: 'Turn on Kids lock', onPress: startLockSetup },
+          { text: 'Start anyway', onPress: doStart },
+        ],
+      );
+      return;
+    }
+    doStart();
+  };
+
+  const doStart = async () => {
     setStarting(true);
     try {
       const r = await CantosHub.kidsStart();
@@ -93,7 +111,7 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
     pinStep === 'old' ? 'Current PIN' : pinStep === 'new' ? 'New 4-digit PIN' : 'Confirm new PIN';
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Kids Mode</Text>
       <Text style={styles.sub}>
         Lock the phone to the apps you choose — games or anything else. Only your PIN unlocks it.
@@ -109,7 +127,13 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           </Text>
           <Text style={styles.heroSub}>
             {kids?.hasPin ? 'PIN set' : 'No PIN yet'} ·{' '}
-            {kids?.strongLock ? 'Strong lock (Shizuku)' : 'Standard lock'}
+            {kids?.strongLock && kids?.a11yLock
+              ? 'Strong lock (Shizuku + Kids lock)'
+              : kids?.strongLock
+                ? 'Strong lock (Shizuku)'
+                : kids?.a11yLock
+                  ? 'Strong lock (Kids lock)'
+                  : 'Standard lock'}
           </Text>
         </View>
       </View>
@@ -151,6 +175,19 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
         )}
       </SectionCard>
 
+      <SectionCard title="Kids lock (no Shizuku needed)">
+        <Text style={styles.dim}>
+          {kids?.a11yLock
+            ? 'On. Works on mobile data too: closes the notification shade and Samsung Wallet’s swipe-up card, and always brings your kid back to their apps.'
+            : 'Shizuku needs Wi-Fi to start, so on mobile data the lock is weaker. Turn on Kids lock for a strong lock anywhere — CantosHub walks you through it. It does nothing while Kids Mode is off.'}
+        </Text>
+        {!kids?.a11yLock && (
+          <View style={{ marginTop: spacing.md }}>
+            <PrimaryButton title="Turn on Kids lock" variant="outline" onPress={startLockSetup} />
+          </View>
+        )}
+      </SectionCard>
+
       <SectionCard title="Parent PIN">
         <Text style={styles.dim}>
           {kids?.hasPin
@@ -177,7 +214,9 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           apps.{'\n'}• Calls always come through.{'\n'}
           {kids?.strongLock
             ? '• Shizuku is on: the notification shade and Recents are disabled and CantosHub becomes the Home screen until you unlock.'
-            : '• For a stronger lock (no notification shade or Recents), turn on Shizuku in the Access tab.'}
+            : kids?.a11yLock
+              ? '• Kids lock is on: the notification shade, Recents and Home all lead straight back to the kids screen.'
+              : '• For a stronger lock (no notification shade or Recents), turn on Kids lock above or Shizuku in the Access tab.'}
           {'\n'}• Kids Mode stays on after a restart until you unlock it.
         </Text>
       </SectionCard>

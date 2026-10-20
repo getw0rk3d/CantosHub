@@ -57,6 +57,14 @@ export type InstalledApp = {
   label: string;
 };
 
+/** An app installed since the last check (for the "add it?" prompt). */
+export type NewApp = InstalledApp & { isGame: boolean };
+
+/** What the Share sheet or the "Add game" icon shortcut asked for. */
+export type PendingAdd =
+  | { kind: 'pick' }
+  | { kind: 'share'; packageName?: string; label?: string; installed: boolean; isGame?: boolean };
+
 export type GameInfo = {
   packageName: string;
   label: string;
@@ -108,6 +116,7 @@ type NativeShape = {
   kidsStart(): Promise<KidsStartResult>;
   kidsStop(pin: string): Promise<boolean>;
   kidsUnlockWithDeviceCredential(): Promise<boolean>;
+  openAccessibilitySettings(): Promise<boolean>;
   getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
@@ -119,7 +128,9 @@ type NativeShape = {
   applyShizukuProfile(profileJson: string): Promise<boolean>;
   revertShizukuProfile(): Promise<boolean>;
   listInstalledApps(): Promise<InstalledApp[]>;
-  listGames(): Promise<GameInfo[]>;
+  listGames(extraJson: string): Promise<GameInfo[]>;
+  listAppsInstalledSince(sinceMs: number): Promise<NewApp[]>;
+  takePendingAdd(): Promise<PendingAdd | null>;
   launchApp(packageName: string): Promise<boolean>;
   getAppIcon(packageName: string): Promise<string | null>;
   getVersionInfo(): Promise<VersionInfo>;
@@ -146,6 +157,8 @@ export type KidsConfig = {
   allowed: string[]; // package names the kid may open
   deviceSecure: boolean; // phone has a screen lock (used as "forgot PIN" fallback)
   strongLock: boolean; // Shizuku available: also locks the shade/Recents + Home
+  a11yLock: boolean; // CantosHub Kids lock accessibility helper is on (no Shizuku needed)
+  restricted: 'allowed' | 'denied' | 'unknown'; // Android 13+ restricted settings for sideloaded apps
 };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
@@ -241,7 +254,7 @@ export const CantosHub = {
   // --- Kids Mode ---
   async kidsGetConfig(): Promise<KidsConfig> {
     if (!native) {
-      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false };
+      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown' };
     }
     return native.kidsGetConfig();
   },
@@ -269,6 +282,11 @@ export const CantosHub = {
   async kidsUnlockWithDeviceCredential(): Promise<boolean> {
     if (!native) return false;
     return native.kidsUnlockWithDeviceCredential();
+  },
+
+  async openAccessibilitySettings(): Promise<boolean> {
+    if (!native) return false;
+    return native.openAccessibilitySettings();
   },
 
   /** Push edited profiles to a running Auto boost (no restart, no re-boost). */
@@ -334,9 +352,20 @@ export const CantosHub = {
     return native.listInstalledApps();
   },
 
-  async listGames(): Promise<GameInfo[]> {
+  /** Android-tagged games plus [extra] packages the user added themselves. */
+  async listGames(extra: string[] = []): Promise<GameInfo[]> {
     if (!native) return [];
-    return native.listGames();
+    return native.listGames(JSON.stringify(extra));
+  },
+
+  async listAppsInstalledSince(sinceMs: number): Promise<NewApp[]> {
+    if (!native) return [];
+    return native.listAppsInstalledSince(sinceMs);
+  },
+
+  async takePendingAdd(): Promise<PendingAdd | null> {
+    if (!native) return null;
+    return native.takePendingAdd();
   },
 
   async launchApp(packageName: string): Promise<boolean> {

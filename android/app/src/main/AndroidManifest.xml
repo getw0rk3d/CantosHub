@@ -50,6 +50,28 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+      </activity>
+
+      <!-- Add an app to CantosHub: Share from the Play / Galaxy Store, or the
+           "Add game" icon shortcut. Invisible; opens CantosHub's add prompt. -->
+      <activity
+          android:name=".AddAppActivity"
+          android:exported="true"
+          android:label="Add to CantosHub"
+          android:theme="@android:style/Theme.Translucent.NoTitleBar"
+          android:excludeFromRecents="true"
+          android:taskAffinity=""
+          android:noHistory="true">
+        <intent-filter>
+          <action android:name="android.intent.action.SEND" />
+          <category android:name="android.intent.category.DEFAULT" />
+          <data android:mimeType="text/plain" />
+        </intent-filter>
+        <intent-filter>
+          <action android:name="com.cantoshub.ADD_GAME" />
+          <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
       </activity>
 
       <service
@@ -69,6 +91,20 @@
         <property
             android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
             android:value="Parental Kids Mode: keeps the phone limited to the apps the parent chose, until the parent unlocks it with their PIN." />
+      </service>
+
+      <!-- Optional Kids Mode lock helper that needs no Shizuku (works on mobile data) -->
+      <service
+          android:name=".KidsAccessibilityService"
+          android:label="@string/kids_a11y_label"
+          android:exported="false"
+          android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+        <intent-filter>
+          <action android:name="android.accessibilityservice.AccessibilityService" />
+        </intent-filter>
+        <meta-data
+            android:name="android.accessibilityservice"
+            android:resource="@xml/kids_accessibility" />
       </service>
 
       <!-- Kids Mode Home screen. Disabled until Kids Mode turns it on (with Shizuku it is

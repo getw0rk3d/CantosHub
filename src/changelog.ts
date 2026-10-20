@@ -4,6 +4,13 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.1':
+    '• Fixed: in the Kids apps / Freeze apps picker, tapping an app while the keyboard was open (after searching) just closed the keyboard instead of selecting it. One tap now selects.' +
+    '\n• Kids Mode: the Samsung Wallet swipe-up from the bottom no longer pops up the card while Kids Mode is on (it comes back when you unlock).' +
+    '\n• Fixed: CantosHub could stay stuck as the Home screen after Kids Mode (e.g. after a restart), so the app wouldn’t leave or close. It now cleans itself up.' +
+    '\n• Fixed: the “Ask a grown-up” screen could stay stuck so “Back to my apps” did nothing.' +
+    '\n• NEW: Kids lock (Kids tab) — a strong Kids Mode lock that needs no Shizuku, so it works on mobile data too. It closes the notification shade and the Wallet card and always brings your kid back. Tap Turn on Kids lock and CantosHub opens each Settings screen for you, step by step.' +
+    '\n• NEW: quick ways to add apps — CantosHub asks about apps you just installed (Add to Games / Kids apps), you can Share an app from the Play Store or Galaxy Store to CantosHub, and long-pressing the CantosHub icon now has Add game.',
   '1.3.0':
     '• NEW: Kids Mode (Kids tab). Pick any apps, set a PIN, and the phone is locked to just those apps — anything else is covered and your kid is sent back. Calls always come through. With Shizuku it also disables the notification shade and Recents and makes the kids screen the Home screen. Forgot the PIN? Your phone’s own lock screen unlocks it.',
   '1.2.4':

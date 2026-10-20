@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Long-press the CantosHub icon → Add game: opens the app picker -->
+  <shortcut
+      android:shortcutId="add_game"
+      android:enabled="true"
+      android:icon="@drawable/ic_tile_boost"
+      android:shortcutShortLabel="@string/shortcut_add_game"
+      android:shortcutLongLabel="@string/shortcut_add_game_long">
+    <intent
+        android:action="com.cantoshub.ADD_GAME"
+        android:targetPackage="com.cantoshub"
+        android:targetClass="com.cantoshub.AddAppActivity" />
+  </shortcut>
+</shortcuts>

@@ -17,6 +17,8 @@ class BootReceiver : BroadcastReceiver() {
       // Kids Mode stays on across a reboot until the parent unlocks it.
       if (KidsPrefs.isActive(context)) {
         try { KidsService.start(context) } catch (e: Exception) { }
+      } else {
+        try { KidsService.releaseSystemLock(context) } catch (e: Exception) { }
       }
     }
   }

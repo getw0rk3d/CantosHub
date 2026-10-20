@@ -215,6 +215,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
       m.putBoolean("deviceSecure", km.isDeviceSecure)
       m.putBoolean("strongLock", ShizukuManager.hasPermission())
+      m.putBoolean("a11yLock", KidsAccessibilityService.isEnabled(ctx))
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("KIDS_CFG_ERR", e)
@@ -290,6 +291,17 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     } catch (e: Exception) {
       KidsPrefs.allowSystemFor(ctx, 0)
       promise.reject("KIDS_CRED_ERR", e)
+    }
+  }
+
+  /** Accessibility settings, to turn on the Kids lock helper (no Shizuku needed). */
+  @ReactMethod
+  fun openAccessibilitySettings(promise: Promise) {
+    try {
+      ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.resolve(false)
     }
   }
 

@@ -108,6 +108,7 @@ type NativeShape = {
   kidsStart(): Promise<KidsStartResult>;
   kidsStop(pin: string): Promise<boolean>;
   kidsUnlockWithDeviceCredential(): Promise<boolean>;
+  openAccessibilitySettings(): Promise<boolean>;
   getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
@@ -146,6 +147,7 @@ export type KidsConfig = {
   allowed: string[]; // package names the kid may open
   deviceSecure: boolean; // phone has a screen lock (used as "forgot PIN" fallback)
   strongLock: boolean; // Shizuku available: also locks the shade/Recents + Home
+  a11yLock: boolean; // CantosHub Kids lock accessibility helper is on (no Shizuku needed)
 };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
@@ -241,7 +243,7 @@ export const CantosHub = {
   // --- Kids Mode ---
   async kidsGetConfig(): Promise<KidsConfig> {
     if (!native) {
-      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false };
+      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false };
     }
     return native.kidsGetConfig();
   },
@@ -269,6 +271,11 @@ export const CantosHub = {
   async kidsUnlockWithDeviceCredential(): Promise<boolean> {
     if (!native) return false;
     return native.kidsUnlockWithDeviceCredential();
+  },
+
+  async openAccessibilitySettings(): Promise<boolean> {
+    if (!native) return false;
+    return native.openAccessibilitySettings();
   },
 
   /** Push edited profiles to a running Auto boost (no restart, no re-boost). */

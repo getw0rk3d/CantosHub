@@ -63,6 +63,19 @@ class KidsService : Service() {
     var isRunning = false
       private set
 
+    @Volatile
+    var instance: KidsService? = null
+      private set
+
+    fun isCallActive(ctx: Context): Boolean = try {
+      when ((ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode) {
+        AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION, AudioManager.MODE_RINGTONE -> true
+        else -> false
+      }
+    } catch (e: Exception) {
+      false
+    }
+
     fun start(ctx: Context) {
       val i = Intent(ctx, KidsService::class.java).setAction(ACTION_START)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i) else ctx.startService(i)
@@ -151,6 +164,7 @@ class KidsService : Service() {
       return START_NOT_STICKY
     }
     isRunning = true
+    instance = this
     applySystemLock()
     if (thread == null) {
       thread = HandlerThread("cantoshub-kids").also { it.start() }
@@ -190,7 +204,29 @@ class KidsService : Service() {
     }
   }
 
+  /** Called by [KidsAccessibilityService] on every window change: check without waiting. */
+  fun checkSoon() {
+    val h = handler ?: return
+    h.postDelayed(::safeCheck, 150)
+    h.postDelayed(::safeCheck, 450)
+  }
+
+  private fun safeCheck() {
+    if (!isRunning) return
+    try {
+      check()
+    } catch (e: Exception) {
+    }
+  }
+
   private fun check() {
+    // CantosHub's own screen is showing: never keep the cover up, even if Android's
+    // usage events still name the blocked app (that left kids stuck on the cover).
+    if (MainActivity.resumed) {
+      lastFg = packageName
+      hideCover()
+      return
+    }
     val fg = foreground() ?: return
     if (isOk(fg)) {
       hideCover()
@@ -198,7 +234,7 @@ class KidsService : Service() {
     }
     showCover()
     val now = System.currentTimeMillis()
-    if (now - lastBounce > 1500) {
+    if (now - lastBounce > 1000) {
       lastBounce = now
       bringKidsScreen()
     }
@@ -218,13 +254,15 @@ class KidsService : Service() {
     if (pkg == packageName || pkg in ALWAYS_OK) return true
     if (pkg in KidsPrefs.allowed(this)) return true
     // Calls must always get through (also emergency calls).
-    if (isCallActive() || Cleanup.isCallApp(pkg)) return true
+    if (isCallActive(this) || Cleanup.isCallApp(pkg)) return true
     // The phone's own lock screen / PIN check used as the "forgot Kids PIN" fallback.
     if (KidsPrefs.systemAllowed(this) && (pkg.contains("settings") || pkg.contains("biometric"))) return true
     return false
   }
 
   private fun bringKidsScreen() {
+    // The accessibility helper may always open activities; a plain service may be blocked.
+    if (KidsAccessibilityService.instance?.showKidsScreen() == true) return
     try {
       startActivity(
         Intent(this, MainActivity::class.java).addFlags(
@@ -251,15 +289,6 @@ class KidsService : Service() {
     } catch (e: Exception) {
       lastFg
     }
-  }
-
-  private fun isCallActive(): Boolean = try {
-    when ((getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode) {
-      AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION, AudioManager.MODE_RINGTONE -> true
-      else -> false
-    }
-  } catch (e: Exception) {
-    false
   }
 
   // --- full-screen cover shown over a blocked app ---
@@ -340,6 +369,7 @@ class KidsService : Service() {
 
   private fun shutdown() {
     isRunning = false
+    instance = null
     handler?.removeCallbacksAndMessages(null)
     thread?.quitSafely()
     thread = null
@@ -352,6 +382,7 @@ class KidsService : Service() {
 
   override fun onDestroy() {
     isRunning = false
+    if (instance === this) instance = null
     handler?.removeCallbacksAndMessages(null)
     thread?.quitSafely()
     hideCover()

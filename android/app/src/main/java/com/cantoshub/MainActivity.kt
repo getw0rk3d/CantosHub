@@ -13,6 +13,23 @@ class MainActivity : ReactActivity() {
    */
   override fun getMainComponentName(): String = "CantosHub"
 
+  companion object {
+    /** True while CantosHub's screen is really in front (Kids Mode uses it to drop its cover). */
+    @Volatile
+    var resumed = false
+      private set
+  }
+
+  override fun onResume() {
+    super.onResume()
+    resumed = true
+  }
+
+  override fun onPause() {
+    resumed = false
+    super.onPause()
+  }
+
   /**
    * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
    * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]

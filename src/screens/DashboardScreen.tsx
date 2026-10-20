@@ -11,13 +11,13 @@ import {
   View,
 } from 'react-native';
 import {
-  Badge,
   PrimaryButton,
   SectionCard,
-  StatCard,
   ToggleRow,
 } from '../components/ui';
-import { CantosHub, Telemetry } from '../native/CantosHub';
+import { AppIcon } from '../components/AppIcon';
+import { Icon } from '../components/Icon';
+import { CantosHub, GameInfo, Telemetry } from '../native/CantosHub';
 import { isToggleUnlocked, ToggleKey, useStore } from '../state/store';
 import { colors, spacing, thermalLabel } from '../theme';
 
@@ -32,7 +32,13 @@ const TOGGLES: { key: ToggleKey; label: string; desc: string }[] = [
   { key: 'maxBrightness', label: 'Max brightness', desc: 'Lock brightness high for visibility' },
 ];
 
-export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: () => void }) {
+export default function DashboardScreen({
+  onGoPermissions,
+  onGoGames,
+}: {
+  onGoPermissions: () => void;
+  onGoGames: () => void;
+}) {
   const store = useStore();
   const { activeProfile, boostRunning, permissions, autoMode, showOverlay } = store;
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
@@ -44,6 +50,13 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   const [cleanMsg, setCleanMsg] = useState<string | null>(null);
   const [boosterMsg, setBoosterMsg] = useState<string | null>(null);
   const mounted = useRef(true);
+  const [games, setGames] = useState<GameInfo[]>([]);
+
+  useEffect(() => {
+    CantosHub.listGames()
+      .then(list => mounted.current && setGames(list))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('CantosHubUpdateProgress', (pct: number) =>
@@ -160,6 +173,29 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   const therm = thermalLabel(telemetry?.thermalStatus ?? -1);
   const usedMem = telemetry ? telemetry.totalMem - telemetry.availMem : 0;
 
+  // Bound games first, then most-played — the quick-launch row (max 4).
+  const bound = store.profiles.filter(p => p.packageName);
+  const byPkg = new Map(games.map(g => [g.packageName, g]));
+  const quick: { pkg: string; label: string }[] = [];
+  for (const p of bound) {
+    const g = byPkg.get(p.packageName as string);
+    if (g && quick.length < 4 && !quick.some(q => q.pkg === g.packageName)) {
+      quick.push({ pkg: g.packageName, label: g.label });
+    }
+  }
+  for (const g of [...games].sort((x, y) => y.totalTimeMs - x.totalTimeMs)) {
+    if (quick.length >= 4) break;
+    if (!quick.some(q => q.pkg === g.packageName)) quick.push({ pkg: g.packageName, label: g.label });
+  }
+  const freeGb = telemetry ? gb(telemetry.availMem) : '—';
+
+  const playGame = async (pkg: string) => {
+    const profile = store.profiles.find(p => p.packageName === pkg);
+    if (profile && !autoMode) await store.boostGame(profile);
+    else if (autoMode && !boostRunning) await store.startBoost();
+    await CantosHub.launchApp(pkg);
+  };
+
   return (
     <ScrollView
       contentContainerStyle={styles.content}
@@ -167,14 +203,19 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
       }>
       <View style={styles.headerRow}>
-        <View>
+        <View style={styles.headerText}>
           <Text style={styles.title}>CantosHub</Text>
-          <Text style={styles.subtitle}>Game Boost</Text>
+          <Text style={styles.subtitle}>
+            {autoMode ? 'Auto mode' : `Manual · ${activeProfile.name}`} · {bound.length} game
+            {bound.length === 1 ? '' : 's'} bound
+          </Text>
         </View>
-        <Badge
-          text={boostRunning ? 'BOOST ON' : 'IDLE'}
-          color={boostRunning ? colors.accent : colors.textDim}
-        />
+        <View style={[styles.statusChip, boostRunning && styles.statusChipOn]}>
+          <View style={[styles.statusDot, boostRunning && styles.statusDotOn]} />
+          <Text style={[styles.statusText, boostRunning && styles.statusTextOn]}>
+            {boostRunning ? 'Boosting' : 'Idle'}
+          </Text>
+        </View>
       </View>
 
       {store.update?.available && (
@@ -199,30 +240,82 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
         </View>
       )}
 
-      {/* Master boost control — tap to toggle */}
-      <Pressable
-        onPress={onMaster}
-        disabled={busy}
-        style={[styles.master, boostRunning && styles.masterOn, busy && styles.masterBusy]}>
-        <Text style={[styles.masterTitle, boostRunning && styles.masterTitleOn]}>
-          {busy
-            ? 'WORKING…'
-            : boostRunning
-            ? autoMode
-              ? 'AUTO BOOST ON'
-              : 'BOOST ACTIVE'
-            : autoMode
-            ? 'START AUTO BOOST'
-            : 'START BOOST'}
-        </Text>
-        <Text style={styles.masterProfile}>
-          {boostRunning
-            ? 'Tap to stop'
-            : autoMode
-            ? 'Auto-applies a profile per game'
-            : `Profile: ${activeProfile.name}`}
-        </Text>
-      </Pressable>
+      {/* Round boost button */}
+      <View style={styles.ringWrap}>
+        <View style={[styles.halo, boostRunning && styles.haloOn]}>
+          <Pressable
+            onPress={onMaster}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={boostRunning ? 'Stop boost' : 'Start boost'}
+            android_ripple={{ color: 'rgba(0,229,160,0.2)', borderless: true, radius: 96 }}
+            style={[styles.ring, boostRunning && styles.ringOn, busy && styles.masterBusy]}>
+            <Icon
+              name="bolt"
+              size={40}
+              color={boostRunning ? colors.accent : colors.textDim}
+              fill={boostRunning ? colors.accent : 'none'}
+            />
+            <Text style={[styles.ringTitle, boostRunning && styles.ringTitleOn]}>
+              {busy ? 'Working…' : boostRunning ? (autoMode ? 'Auto boost on' : 'Boost on') : autoMode ? 'Start auto' : 'Start boost'}
+            </Text>
+            <Text style={styles.ringSub} numberOfLines={1}>
+              {boostRunning
+                ? autoMode
+                  ? 'Watching for games'
+                  : activeProfile.name
+                : autoMode
+                ? 'Applies per game'
+                : activeProfile.name}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+      <Text style={styles.ringHint}>{boostRunning ? 'Tap to stop' : 'Tap to start'}</Text>
+
+      {/* Stat tiles */}
+      <View style={styles.tiles}>
+        <Tile label="Battery" value={telemetry ? String(telemetry.batteryLevel) : '—'} unit="%" />
+        <Tile label="Temp" value={therm.label === 'None' || therm.label === 'Light' ? 'Cool' : therm.label} color={therm.color} />
+        <Tile
+          label="RAM"
+          value={telemetry ? gb(usedMem) : '—'}
+          unit={telemetry ? `/${Math.round(telemetry.totalMem / 1073741824)}` : undefined}
+        />
+        <Tile label="Free" value={freeGb} unit="GB" color={colors.accent2} />
+      </View>
+      {telemetry?.lowMemory && <Text style={styles.warnLine}>⚠️ System reports low memory</Text>}
+
+      {/* Your games */}
+      <View style={styles.gamesHead}>
+        <Text style={styles.gamesTitle}>Your games</Text>
+        <Pressable onPress={onGoGames} hitSlop={8}>
+          <Text style={styles.link}>See all</Text>
+        </Pressable>
+      </View>
+      <View style={styles.gamesRow}>
+        {quick.map(q => {
+          const isBound = bound.some(p => p.packageName === q.pkg);
+          return (
+            <Pressable key={q.pkg} style={styles.gameItem} onPress={() => playGame(q.pkg)}>
+              <View style={[styles.gameIconWrap, isBound && styles.gameIconBound]}>
+                <AppIcon packageName={q.pkg} label={q.label} size={54} />
+              </View>
+              <Text style={styles.gameName} numberOfLines={1}>
+                {q.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+        {quick.length < 4 && (
+          <Pressable style={styles.gameItem} onPress={onGoGames}>
+            <View style={styles.addTile}>
+              <Icon name="plus" size={22} color={colors.textDim} />
+            </View>
+            <Text style={styles.gameName}>Add</Text>
+          </Pressable>
+        )}
+      </View>
 
       {/* Mode */}
       <SectionCard title="Mode">
@@ -308,33 +401,6 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
         </SectionCard>
       )}
 
-      {/* Live telemetry */}
-      <SectionCard title="Live status">
-        <View style={styles.statGrid}>
-          <StatCard
-            label="Battery"
-            value={telemetry ? String(telemetry.batteryLevel) : '—'}
-            unit="%"
-            accent={colors.accent2}
-          />
-          <StatCard label="Thermal" value={therm.label} accent={therm.color} />
-        </View>
-        <View style={[styles.statGrid, { marginTop: spacing.md }]}>
-          <StatCard
-            label="RAM used"
-            value={telemetry ? `${gb(usedMem)}/${gb(telemetry.totalMem)}` : '—'}
-            unit="GB"
-          />
-          <StatCard
-            label="Foreground"
-            value={telemetry?.foregroundApp ? appShort(telemetry.foregroundApp) : '—'}
-          />
-        </View>
-        {telemetry?.lowMemory && (
-          <Text style={styles.warnLine}>⚠️ System reports low memory</Text>
-        )}
-      </SectionCard>
-
       {/* Quick toggles */}
       <SectionCard
         title="Quick toggles"
@@ -375,9 +441,18 @@ export default function DashboardScreen({ onGoPermissions }: { onGoPermissions: 
   );
 }
 
-function appShort(pkg: string): string {
-  const parts = pkg.split('.');
-  return parts[parts.length - 1] || pkg;
+function Tile({ label, value, unit, color }: { label: string; value: string; unit?: string; color?: string }) {
+  return (
+    <View style={styles.tile}>
+      <Text style={styles.tileLabel}>{label}</Text>
+      <View style={styles.tileRow}>
+        <Text style={[styles.tileValue, color ? { color } : null]} numberOfLines={1} adjustsFontSizeToFit>
+          {value}
+        </Text>
+        {!!unit && <Text style={styles.tileUnit}>{unit}</Text>}
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -388,8 +463,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
+  headerText: { flex: 1, paddingRight: spacing.md },
   title: { color: colors.text, fontSize: 26, fontWeight: '900' },
-  subtitle: { color: colors.accent, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
+  subtitle: { color: colors.textDim, fontSize: 13, marginTop: 2 },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusChipOn: { backgroundColor: 'rgba(0,229,160,0.12)', borderColor: 'rgba(0,229,160,0.4)' },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.textDim },
+  statusDotOn: { backgroundColor: colors.accent },
+  statusText: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
+  statusTextOn: { color: colors.accent },
+  ringWrap: { alignItems: 'center', marginTop: spacing.sm },
+  halo: { padding: 10, borderRadius: 999, borderWidth: 1, borderColor: 'transparent' },
+  haloOn: { borderColor: 'rgba(0,229,160,0.25)', backgroundColor: 'rgba(0,229,160,0.04)' },
+  ring: {
+    width: 188,
+    height: 188,
+    borderRadius: 94,
+    borderWidth: 6,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  ringOn: { borderColor: colors.accent, backgroundColor: 'rgba(0,229,160,0.10)' },
+  ringTitle: { color: colors.text, fontSize: 17, fontWeight: '800', marginTop: 6 },
+  ringTitleOn: { color: colors.accent },
+  ringSub: { color: colors.textDim, fontSize: 12, marginTop: 2 },
+  ringHint: { color: colors.textDim, fontSize: 12, textAlign: 'center', marginTop: spacing.sm, marginBottom: spacing.lg },
+  tiles: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  tile: { flex: 1, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 10 },
+  tileLabel: { color: colors.textDim, fontSize: 11 },
+  tileRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 3 },
+  tileValue: { color: colors.text, fontSize: 18, fontWeight: '800', flexShrink: 1 },
+  tileUnit: { color: colors.textDim, fontSize: 11, marginLeft: 2, marginBottom: 2 },
+  gamesHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.sm },
+  gamesTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  gamesRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  gameItem: { width: 64, alignItems: 'center' },
+  gameIconWrap: { borderRadius: 16, borderWidth: 2, borderColor: 'transparent', padding: 1 },
+  gameIconBound: { borderColor: colors.accent },
+  gameName: { color: colors.text, fontSize: 11, marginTop: 4, textAlign: 'center' },
+  addTile: {
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   notice: {
     backgroundColor: 'rgba(255,176,32,0.12)',
     borderColor: colors.warn,
@@ -410,24 +544,7 @@ const styles = StyleSheet.create({
   updateTitle: { color: colors.accent, fontSize: 14, fontWeight: '800' },
   updateNotes: { color: colors.textDim, fontSize: 12, marginTop: 4 },
   updateCta: { color: colors.accent2, fontSize: 12, fontWeight: '700', marginTop: 6 },
-  master: {
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    paddingVertical: spacing.xl,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  masterOn: {
-    borderColor: colors.accent,
-    backgroundColor: 'rgba(0,229,160,0.08)',
-  },
   masterBusy: { opacity: 0.6 },
-  masterTitle: { color: colors.textDim, fontSize: 22, fontWeight: '900', letterSpacing: 1 },
-  masterTitleOn: { color: colors.accent },
-  masterProfile: { color: colors.textDim, fontSize: 13, marginTop: 6 },
-  statGrid: { flexDirection: 'row', gap: spacing.md },
   warnLine: { color: colors.warn, fontSize: 12, marginTop: spacing.md },
   modeHint: { color: colors.textDim, fontSize: 12, marginTop: spacing.sm },
   freeDesc: { color: colors.textDim, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },

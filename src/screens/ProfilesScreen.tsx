@@ -116,7 +116,8 @@ export default function ProfilesScreen() {
         onClose={() => setGamePickerFor(null)}
         onSave={selected => {
           if (gamePickerFor) {
-            store.updateProfile(gamePickerFor, { packageName: selected[0] });
+            if (selected[0]) store.assignGameToProfile(gamePickerFor, selected[0]);
+            else store.updateProfile(gamePickerFor, { packageName: undefined });
           }
           setGamePickerFor(null);
         }}

@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -17,57 +16,18 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { AppIcon } from '../components/AppIcon';
+import { Icon } from '../components/Icon';
 import { Badge, PrimaryButton, SectionCard } from '../components/ui';
 import { CantosHub, GameInfo, GameStat, ShortcutSpec } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, radius, spacing } from '../theme';
 
-const AVATAR_COLORS = ['#00E5A0', '#3B82F6', '#FFB020', '#FF4D67', '#A78BFA', '#22D3EE'];
-
-function avatarColor(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) {
-    h = (h * 31 + seed.charCodeAt(i)) % 1000000007;
-  }
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-
 function fmtTime(ms: number): string {
   const m = Math.round(ms / 60000);
-  if (m < 1) return '—';
+  if (m < 1) return '';
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-// Cache icons across renders/tabs so we fetch each app's icon at most once.
-const iconCache = new Map<string, string | null>();
-
-function AppIcon({ packageName, label }: { packageName: string; label: string }) {
-  const [uri, setUri] = useState<string | null>(iconCache.get(packageName) ?? null);
-
-  useEffect(() => {
-    if (iconCache.has(packageName)) {
-      setUri(iconCache.get(packageName) ?? null);
-      return;
-    }
-    let cancelled = false;
-    CantosHub.getAppIcon(packageName).then(u => {
-      iconCache.set(packageName, u);
-      if (!cancelled) setUri(u);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [packageName]);
-
-  if (uri) {
-    return <Image source={{ uri }} style={styles.avatar} resizeMode="cover" />;
-  }
-  return (
-    <View style={[styles.avatar, { backgroundColor: avatarColor(packageName) }]}>
-      <Text style={styles.avatarText}>{label.charAt(0).toUpperCase()}</Text>
-    </View>
-  );
 }
 
 export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: () => void }) {
@@ -220,14 +180,20 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
             )}
           </SectionCard>
         ) : (
-          visible.map(g => {
-            const profile = store.profiles.find(p => p.packageName === g.packageName);
-            const st = stats[g.packageName];
-            const hidden = hiddenSet.has(g.packageName);
-            return (
-              <View key={g.packageName} style={styles.gameCard}>
-                <View style={styles.gameTop}>
-                  <AppIcon packageName={g.packageName} label={g.label} />
+          <View style={styles.list}>
+            {visible.map((g, i) => {
+              const profile = store.profiles.find(p => p.packageName === g.packageName);
+              const st = stats[g.packageName];
+              const hidden = hiddenSet.has(g.packageName);
+              const played = fmtTime(g.totalTimeMs);
+              const onPlay = async () => {
+                if (hidden) await store.unhideGame(g.packageName);
+                if (profile) await store.boostGame(profile);
+                await CantosHub.launchApp(g.packageName);
+              };
+              return (
+                <View key={g.packageName} style={[styles.gameRow, i > 0 && styles.gameRowDivider]}>
+                  <AppIcon packageName={g.packageName} label={g.label} size={46} />
                   <View style={styles.gameText}>
                     <View style={styles.labelRow}>
                       <Text style={styles.gameLabel} numberOfLines={1}>
@@ -235,51 +201,30 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                       </Text>
                       {hidden && <Badge text="HIDDEN" color={colors.warn} />}
                     </View>
-                    <Text style={styles.gameMeta}>Playtime (7d): {fmtTime(g.totalTimeMs)}</Text>
-                    {!!st && st.sessions > 0 && (
-                      <Text style={styles.gameMeta}>
-                        {st.sessions} boost{st.sessions === 1 ? '' : 's'}
-                        {st.avgFps > 0 ? ` · ~${st.avgFps} fps avg` : ''}
-                      </Text>
-                    )}
-                    <Text style={[styles.gameMeta, profile ? styles.boundOn : null]}>
-                      {profile ? `Profile: ${profile.name}` : 'No profile bound'}
+                    <Text style={styles.gameMeta} numberOfLines={1}>
+                      {played ? `${played} this week` : 'Not played this week'}
+                      {' · '}
+                      <Text style={profile ? styles.boundOn : null}>{profile ? profile.name : 'no profile'}</Text>
+                      {st?.avgFps ? ` · ~${st.avgFps} fps` : ''}
                     </Text>
                   </View>
+                  <Pressable
+                    onPress={onPlay}
+                    style={({ pressed }) => [styles.playBtn, pressed && styles.playBtnPressed]}
+                    accessibilityLabel={profile ? `Boost and play ${g.label}` : `Play ${g.label}`}>
+                    <Icon name={profile ? 'bolt' : 'play'} size={18} color="#06140F" fill="#06140F" />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setMoreFor(g)}
+                    style={styles.moreBtn}
+                    hitSlop={6}
+                    accessibilityLabel={`More options for ${g.label}`}>
+                    <Icon name="more" size={20} color={colors.textDim} />
+                  </Pressable>
                 </View>
-                <View style={styles.gameActions}>
-                  <View style={styles.gameBtn}>
-                    {hidden ? (
-                      <PrimaryButton
-                        title="Unhide & Play"
-                        onPress={async () => {
-                          await store.unhideGame(g.packageName);
-                          if (profile) await store.boostGame(profile);
-                          await CantosHub.launchApp(g.packageName);
-                        }}
-                      />
-                    ) : profile ? (
-                      <PrimaryButton
-                        title="Boost & Play"
-                        onPress={async () => {
-                          await store.boostGame(profile);
-                          await CantosHub.launchApp(g.packageName);
-                        }}
-                      />
-                    ) : (
-                      <PrimaryButton
-                        title="Launch"
-                        onPress={() => CantosHub.launchApp(g.packageName)}
-                      />
-                    )}
-                  </View>
-                  <View style={styles.gameBtn}>
-                    <PrimaryButton title="More" variant="outline" onPress={() => setMoreFor(g)} />
-                  </View>
-                </View>
-              </View>
-            );
-          })
+              );
+            })}
+          </View>
         )}
       </ScrollView>
 
@@ -606,24 +551,30 @@ const styles = StyleSheet.create({
   noticeText: { color: colors.warn, fontSize: 12 },
   empty: { color: colors.textDim, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
 
-  gameCard: {
+  list: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
   },
-  gameTop: { flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#06140F', fontSize: 22, fontWeight: '900' },
-  gameText: { flex: 1, marginLeft: spacing.md },
+  gameRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md },
+  gameRowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  gameText: { flex: 1, marginLeft: spacing.md, marginRight: spacing.sm },
+  playBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playBtnPressed: { opacity: 0.7 },
+  moreBtn: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
   labelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   gameLabel: { color: colors.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
-  gameMeta: { color: colors.textDim, fontSize: 12, marginTop: 2 },
+  gameMeta: { color: colors.textDim, fontSize: 12, marginTop: 3 },
   boundOn: { color: colors.accent },
-  gameActions: { flexDirection: 'row', marginTop: spacing.md, gap: spacing.md },
-  gameBtn: { flex: 1 },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   centerBackdrop: { justifyContent: 'center', padding: spacing.xl },

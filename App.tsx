@@ -12,16 +12,17 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import LibraryScreen from './src/screens/LibraryScreen';
 import PermissionsScreen from './src/screens/PermissionsScreen';
 import ProfilesScreen from './src/screens/ProfilesScreen';
+import { Icon, IconName } from './src/components/Icon';
 import { StoreProvider, useStore } from './src/state/store';
 import { colors } from './src/theme';
 
 type Tab = 'dashboard' | 'games' | 'profiles' | 'permissions';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'dashboard', label: 'Boost', icon: '⚡' },
-  { key: 'games', label: 'Games', icon: '🕹️' },
-  { key: 'profiles', label: 'Profiles', icon: '🎮' },
-  { key: 'permissions', label: 'Access', icon: '🔓' },
+const TABS: { key: Tab; label: string; icon: IconName }[] = [
+  { key: 'dashboard', label: 'Boost', icon: 'bolt' },
+  { key: 'games', label: 'Games', icon: 'gamepad' },
+  { key: 'profiles', label: 'Profiles', icon: 'sliders' },
+  { key: 'permissions', label: 'Access', icon: 'unlock' },
 ];
 
 function App() {
@@ -43,7 +44,10 @@ function AppShell() {
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <View style={styles.body}>
           {tab === 'dashboard' && (
-            <DashboardScreen onGoPermissions={() => setTab('permissions')} />
+            <DashboardScreen
+              onGoPermissions={() => setTab('permissions')}
+              onGoGames={() => setTab('games')}
+            />
           )}
           {tab === 'games' && <LibraryScreen onGoPermissions={() => setTab('permissions')} />}
           {tab === 'profiles' && <ProfilesScreen />}
@@ -59,7 +63,9 @@ function AppShell() {
                 style={styles.tab}
                 onPress={() => setTab(t.key)}
                 android_ripple={{ color: colors.border, borderless: true }}>
-                <Text style={[styles.tabIcon, active && styles.tabIconActive]}>{t.icon}</Text>
+                <View style={[styles.tabPill, active && styles.tabPillActive]}>
+                  <Icon name={t.icon} size={22} color={active ? colors.accent : colors.textDim} />
+                </View>
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
               </Pressable>
             );
@@ -107,9 +113,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-  tabIcon: { fontSize: 20, opacity: 0.5 },
-  tabIconActive: { opacity: 1 },
-  tabLabel: { color: colors.textDim, fontSize: 11, marginTop: 2, fontWeight: '600' },
+  // Background is always set (transparent when inactive) so Android keeps the rounded
+  // corners when a tab becomes active after the first render.
+  tabPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  tabPillActive: { backgroundColor: 'rgba(0,229,160,0.14)' },
+  tabLabel: { color: colors.textDim, fontSize: 11, marginTop: 3, fontWeight: '600' },
   tabLabelActive: { color: colors.accent },
 
   wnBackdrop: {

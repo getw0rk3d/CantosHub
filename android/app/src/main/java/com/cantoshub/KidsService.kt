@@ -43,6 +43,8 @@ class KidsService : Service() {
     private const val CHANNEL_ID = "cantoshub_kids"
     private const val NOTIF_ID = 7342
     private const val POLL_MS = 500L
+    // The kids screen comes back right away; keep "Ask a grown-up" up long enough to read.
+    private const val MIN_COVER_MS = 2500L
     const val HOME_ALIAS = "com.cantoshub.KidsHome"
 
     // Samsung Wallet's swipe-up-from-the-bottom card. It's an always-running service, so
@@ -144,6 +146,7 @@ class KidsService : Service() {
   private var handler: Handler? = null
   private val main = Handler(Looper.getMainLooper())
   private var cover: LinearLayout? = null
+  private var coverShownAt = 0L
   private var lastFg: String? = null
   private var lastQuery = 0L
   private var lastBounce = 0L
@@ -331,7 +334,10 @@ class KidsService : Service() {
           setColor(Color.parseColor("#FFD43B"))
         }
         setPadding(70, 30, 70, 30)
-        setOnClickListener { bringKidsScreen() }
+        setOnClickListener {
+          bringKidsScreen()
+          hideCover(force = true)
+        }
       })
       val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -349,14 +355,16 @@ class KidsService : Service() {
       try {
         wm.addView(layout, lp)
         cover = layout
+        coverShownAt = System.currentTimeMillis()
       } catch (e: Exception) {
         cover = null
       }
     }
   }
 
-  private fun hideCover() {
+  private fun hideCover(force: Boolean = false) {
     main.post {
+      if (!force && System.currentTimeMillis() - coverShownAt < MIN_COVER_MS) return@post
       cover?.let {
         try {
           (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
@@ -374,7 +382,7 @@ class KidsService : Service() {
     thread?.quitSafely()
     thread = null
     handler = null
-    hideCover()
+    hideCover(force = true)
     releaseSystemLock(this)
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
@@ -385,7 +393,7 @@ class KidsService : Service() {
     if (instance === this) instance = null
     handler?.removeCallbacksAndMessages(null)
     thread?.quitSafely()
-    hideCover()
+    hideCover(force = true)
     super.onDestroy()
   }
 

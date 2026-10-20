@@ -65,7 +65,22 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
     }
   };
 
-  const onStart = async () => {
+  const onStart = () => {
+    if (!kids?.strongLock && !kids?.a11yLock) {
+      Alert.alert(
+        'Notification shade stays open',
+        'Without Kids lock (or Shizuku) Android lets your kid pull down the notification shade and quick settings. Turn on Kids lock first for a full lock.',
+        [
+          { text: 'Turn on Kids lock', onPress: () => CantosHub.openAccessibilitySettings() },
+          { text: 'Start anyway', onPress: doStart },
+        ],
+      );
+      return;
+    }
+    doStart();
+  };
+
+  const doStart = async () => {
     setStarting(true);
     try {
       const r = await CantosHub.kidsStart();
@@ -163,7 +178,7 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
             ? 'On. Works on mobile data too: closes the notification shade and Samsung Wallet’s swipe-up card, and always brings your kid back to their apps.'
             : 'Shizuku needs Wi-Fi to start, so on mobile data the lock is weaker. Turn on “CantosHub Kids lock” in Accessibility (Installed apps) for a strong lock anywhere. It does nothing while Kids Mode is off.'}
           {!kids?.a11yLock
-            ? '\n\nIf Android says it’s a restricted setting: open App info for CantosHub, tap ⋮ (top right) → Allow restricted settings, then try again.'
+            ? '\n\nIf the switch is greyed out or says “Restricted setting”: tap it once, then tap Open App info below → ⋮ (top right) → Allow restricted settings, confirm, and turn on Kids lock again.'
             : ''}
         </Text>
         {!kids?.a11yLock && (

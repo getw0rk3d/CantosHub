@@ -227,7 +227,7 @@ function ProfileCard({
   );
 }
 
-function AppPickerModal({
+export function AppPickerModal({
   visible,
   initialSelected,
   multiSelect = true,
@@ -247,10 +247,12 @@ function AppPickerModal({
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     if (!visible) return;
     setSelected(new Set(initialSelected));
+    setQuery('');
     setLoading(true);
     CantosHub.listInstalledApps()
       .then(list => setApps(list.sort((a, b) => a.label.localeCompare(b.label))))
@@ -277,11 +279,27 @@ function AppPickerModal({
           <Text style={styles.modalTitle}>{title}</Text>
           <Text style={styles.modalSub}>{subtitle}</Text>
 
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search apps"
+            placeholderTextColor={colors.textDim}
+            style={styles.input}
+            autoCorrect={false}
+          />
+
           {loading ? (
             <ActivityIndicator color={colors.accent} style={{ marginVertical: spacing.xl }} />
           ) : (
             <FlatList
-              data={apps}
+              // Selected apps first, then search matches (by name or package).
+              data={apps
+                .filter(a => {
+                  const q = query.trim().toLowerCase();
+                  return !q || a.label.toLowerCase().includes(q) || a.packageName.toLowerCase().includes(q);
+                })
+                .sort((a, b) => Number(selected.has(b.packageName)) - Number(selected.has(a.packageName)))}
+              keyboardShouldPersistTaps="handled"
               keyExtractor={item => item.packageName}
               style={styles.modalList}
               renderItem={({ item }) => {
@@ -307,7 +325,10 @@ function AppPickerModal({
               <PrimaryButton title="Cancel" variant="outline" onPress={onClose} />
             </View>
             <View style={styles.modalBtn}>
-              <PrimaryButton title="Save" onPress={() => onSave(Array.from(selected))} />
+              <PrimaryButton
+                title={multiSelect && selected.size > 0 ? `Save (${selected.size})` : 'Save'}
+                onPress={() => onSave(Array.from(selected))}
+              />
             </View>
           </View>
         </View>

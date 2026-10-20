@@ -102,6 +102,12 @@ type NativeShape = {
   stopBoost(): Promise<boolean>;
   isBoostRunning(): Promise<boolean>;
   updateAutoProfiles(profilesJson: string): Promise<boolean>;
+  kidsGetConfig(): Promise<KidsConfig>;
+  kidsSetAllowed(json: string): Promise<boolean>;
+  kidsSetPin(oldPin: string, newPin: string): Promise<boolean>;
+  kidsStart(): Promise<KidsStartResult>;
+  kidsStop(pin: string): Promise<boolean>;
+  kidsUnlockWithDeviceCredential(): Promise<boolean>;
   getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
@@ -132,6 +138,17 @@ type NativeShape = {
   setGameShortcuts(jsonArray: string): Promise<boolean>;
   pinGameShortcut(json: string): Promise<boolean>;
 };
+
+export type KidsConfig = {
+  active: boolean; // Kids Mode is on (the lock should be running)
+  running: boolean; // the lock service is running right now
+  hasPin: boolean;
+  allowed: string[]; // package names the kid may open
+  deviceSecure: boolean; // phone has a screen lock (used as "forgot PIN" fallback)
+  strongLock: boolean; // Shizuku available: also locks the shade/Recents + Home
+};
+
+export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
 
 /** What this device supports (so no-op toggles can be hidden). */
 export type Capabilities = {
@@ -219,6 +236,39 @@ export const CantosHub = {
   async isBoostRunning(): Promise<boolean> {
     if (!native) return false;
     return native.isBoostRunning();
+  },
+
+  // --- Kids Mode ---
+  async kidsGetConfig(): Promise<KidsConfig> {
+    if (!native) {
+      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false };
+    }
+    return native.kidsGetConfig();
+  },
+
+  async kidsSetAllowed(pkgs: string[]): Promise<boolean> {
+    if (!native) return true;
+    return native.kidsSetAllowed(JSON.stringify(pkgs));
+  },
+
+  async kidsSetPin(oldPin: string, newPin: string): Promise<boolean> {
+    if (!native) return true;
+    return native.kidsSetPin(oldPin, newPin);
+  },
+
+  async kidsStart(): Promise<KidsStartResult> {
+    if (!native) return 'OK';
+    return native.kidsStart();
+  },
+
+  async kidsStop(pin: string): Promise<boolean> {
+    if (!native) return true;
+    return native.kidsStop(pin);
+  },
+
+  async kidsUnlockWithDeviceCredential(): Promise<boolean> {
+    if (!native) return false;
+    return native.kidsUnlockWithDeviceCredential();
   },
 
   /** Push edited profiles to a running Auto boost (no restart, no re-boost). */

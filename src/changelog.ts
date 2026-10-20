@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.0':
+    '• NEW: Kids Mode (Kids tab). Pick any apps, set a PIN, and the phone is locked to just those apps — anything else is covered and your kid is sent back. Calls always come through. With Shizuku it also disables the notification shade and Recents and makes the kids screen the Home screen. Forgot the PIN? Your phone’s own lock screen unlocks it.',
   '1.2.4':
     '• Reliability fixes: reopening the app (or the Boost tab) no longer restarts a running boost and re-runs Free RAM; if Android restarts the boost it resumes your mode instead of killing apps; Quick tile and home-screen shortcuts now apply Shizuku tweaks too; profile edits apply live in Auto mode; the overlay HUD no longer blocks taps in games; stopping a boost restores your exact resolution (Samsung FHD+ stays FHD+) and only undoes what the boost changed.',
   '1.2.3':

@@ -21,6 +21,7 @@ import {
   BoostProfile,
   Capabilities,
   CantosHub,
+  KidsConfig,
   GameBoosterStatus,
   PermissionStatus,
   ShizukuStatus,
@@ -139,6 +140,8 @@ type Store = {
   /** Re-read whether the boost service is actually running (e.g. stopped from the notification). */
   syncBoost: () => Promise<void>;
   capabilities: Capabilities | null;
+  kids: KidsConfig | null;
+  refreshKids: () => Promise<void>;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
   /** Start a manual boost using a specific profile (used by Games → Boost & Play). */
@@ -164,6 +167,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const [kids, setKids] = useState<KidsConfig | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   const activeProfile = useMemo(
@@ -382,6 +386,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setBoostRunning(false);
   }, []);
 
+  const refreshKids = useCallback(async () => {
+    try {
+      setKids(await CantosHub.kidsGetConfig());
+    } catch {
+      // keep current value
+    }
+  }, []);
+
   const syncBoost = useCallback(async () => {
     try {
       setBoostRunning(await CantosHub.isBoostRunning());
@@ -419,11 +431,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {})
       .finally(() => CantosHub.reconcile().catch(() => {}));
     CantosHub.getCapabilities().then(setCapabilities).catch(() => {});
+    refreshKids();
     refreshPermissions();
     refreshShizuku();
     refreshGameBooster();
     checkForUpdate();
-  }, [refreshPermissions, refreshShizuku, refreshGameBooster, checkForUpdate]);
+  }, [refreshPermissions, refreshShizuku, refreshGameBooster, checkForUpdate, refreshKids]);
 
   // Re-check permissions/Shizuku/booster whenever the app comes back to the
   // foreground — e.g. right after the user grants a permission in system Settings.
@@ -431,13 +444,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const sub = AppState.addEventListener('change', s => {
       if (s === 'active') {
         syncBoost();
+        refreshKids();
         refreshPermissions();
         refreshShizuku();
         refreshGameBooster();
       }
     });
     return () => sub.remove();
-  }, [refreshPermissions, refreshShizuku, refreshGameBooster, syncBoost]);
+  }, [refreshPermissions, refreshShizuku, refreshGameBooster, syncBoost, refreshKids]);
 
   // Profile edits reach a running Auto boost right away (no stop/start needed).
   useEffect(() => {
@@ -568,6 +582,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     boostRunning,
     syncBoost,
     capabilities,
+    kids,
+    refreshKids,
     startBoost,
     stopBoost,
     boostGame,

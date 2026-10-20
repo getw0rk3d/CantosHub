@@ -12,16 +12,19 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import LibraryScreen from './src/screens/LibraryScreen';
 import PermissionsScreen from './src/screens/PermissionsScreen';
 import ProfilesScreen from './src/screens/ProfilesScreen';
+import KidsScreen from './src/screens/KidsScreen';
+import KidsHomeScreen from './src/screens/KidsHomeScreen';
 import { Icon, IconName } from './src/components/Icon';
 import { StoreProvider, useStore } from './src/state/store';
 import { colors } from './src/theme';
 
-type Tab = 'dashboard' | 'games' | 'profiles' | 'permissions';
+type Tab = 'dashboard' | 'games' | 'profiles' | 'kids' | 'permissions';
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'dashboard', label: 'Boost', icon: 'bolt' },
   { key: 'games', label: 'Games', icon: 'gamepad' },
   { key: 'profiles', label: 'Profiles', icon: 'sliders' },
+  { key: 'kids', label: 'Kids', icon: 'smile' },
   { key: 'permissions', label: 'Access', icon: 'unlock' },
 ];
 
@@ -37,6 +40,19 @@ function App() {
 
 function AppShell() {
   const [tab, setTab] = useState<Tab>('dashboard');
+  const { kids } = useStore();
+
+  // While Kids Mode is on, the kids' home screen is the whole app (no tabs).
+  if (kids?.active) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor="#1B1446" />
+        <SafeAreaView style={[styles.root, styles.kidsRoot]} edges={['top', 'bottom']}>
+          <KidsHomeScreen />
+        </SafeAreaView>
+      </>
+    );
+  }
 
   return (
     <>
@@ -51,6 +67,7 @@ function AppShell() {
           )}
           {tab === 'games' && <LibraryScreen onGoPermissions={() => setTab('permissions')} />}
           {tab === 'profiles' && <ProfilesScreen />}
+          {tab === 'kids' && <KidsScreen onGoPermissions={() => setTab('permissions')} />}
           {tab === 'permissions' && <PermissionsScreen />}
         </View>
 
@@ -104,6 +121,7 @@ function WhatsNewModal() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  kidsRoot: { backgroundColor: '#1B1446' },
   body: { flex: 1 },
   tabBar: {
     flexDirection: 'row',
@@ -116,7 +134,7 @@ const styles = StyleSheet.create({
   // Background is always set (transparent when inactive) so Android keeps the rounded
   // corners when a tab becomes active after the first render.
   tabPill: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 16,
     overflow: 'hidden',

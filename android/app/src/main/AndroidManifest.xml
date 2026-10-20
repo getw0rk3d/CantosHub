@@ -61,6 +61,30 @@
             android:value="Maintains the user-selected performance settings (Do Not Disturb, screen timeout, brightness, refresh rate) while gaming, and restores them afterwards." />
       </service>
 
+      <!-- Kids Mode lock (only the parent's chosen apps can be opened) -->
+      <service
+          android:name=".KidsService"
+          android:exported="false"
+          android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="Parental Kids Mode: keeps the phone limited to the apps the parent chose, until the parent unlocks it with their PIN." />
+      </service>
+
+      <!-- Kids Mode Home screen. Disabled until Kids Mode turns it on (with Shizuku it is
+           set as the default Home, then the previous launcher is restored on exit). -->
+      <activity-alias
+          android:name=".KidsHome"
+          android:targetActivity=".MainActivity"
+          android:enabled="false"
+          android:exported="true">
+        <intent-filter>
+          <action android:name="android.intent.action.MAIN" />
+          <category android:name="android.intent.category.HOME" />
+          <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
+      </activity-alias>
+
       <receiver
           android:name=".BootReceiver"
           android:enabled="true"

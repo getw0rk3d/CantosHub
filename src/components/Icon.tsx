@@ -18,7 +18,9 @@ export type IconName =
   | 'trash'
   | 'shield'
   | 'layers'
-  | 'check';
+  | 'check'
+  | 'smile'
+  | 'lock';
 
 export function Icon({
   name,
@@ -110,6 +112,20 @@ export function Icon({
         </>
       )}
       {name === 'check' && <Polyline {...p} points="20 6 9 17 4 12" />}
+      {name === 'smile' && (
+        <>
+          <Circle {...p} cx={12} cy={12} r={10} />
+          <Path {...p} d="M8 14s1.5 2 4 2 4-2 4-2" />
+          <Circle cx={9} cy={9.5} r={1.2} fill={color} />
+          <Circle cx={15} cy={9.5} r={1.2} fill={color} />
+        </>
+      )}
+      {name === 'lock' && (
+        <>
+          <Rect {...p} x={3} y={11} width={18} height={11} rx={2} />
+          <Path {...p} d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </>
+      )}
     </Svg>
   );
 }

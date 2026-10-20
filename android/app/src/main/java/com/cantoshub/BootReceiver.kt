@@ -14,6 +14,10 @@ class BootReceiver : BroadcastReceiver() {
     if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
       try { BoostActions.revert(context) } catch (e: Exception) { }
       try { ShizukuActions.revert(context) { } } catch (e: Exception) { }
+      // Kids Mode stays on across a reboot until the parent unlocks it.
+      if (KidsPrefs.isActive(context)) {
+        try { KidsService.start(context) } catch (e: Exception) { }
+      }
     }
   }
 }

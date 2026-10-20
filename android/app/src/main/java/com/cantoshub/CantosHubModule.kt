@@ -19,7 +19,10 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
+import android.app.Activity
+import android.app.KeyguardManager
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -53,7 +56,21 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       }
     }
 
+  // "Forgot Kids PIN": the phone's own lock-screen check unlocks Kids Mode.
+  private var credPromise: Promise? = null
+  private val activityListener = object : BaseActivityEventListener() {
+    override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+      if (requestCode != CRED_REQ) return
+      KidsPrefs.allowSystemFor(ctx, 0)
+      val ok = resultCode == Activity.RESULT_OK
+      if (ok) stopKidsNow()
+      credPromise?.resolve(ok)
+      credPromise = null
+    }
+  }
+
   init {
+    ctx.addActivityEventListener(activityListener)
     try {
       Shizuku.addRequestPermissionResultListener(shizukuPermListener)
     } catch (e: Exception) {
@@ -71,6 +88,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   companion object {
     private const val SHIZUKU_REQ = 4001
+    private const val CRED_REQ = 4002
   }
 
   // --- Permissions ---
@@ -183,6 +201,104 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  // --- Kids Mode ---
+  @ReactMethod
+  fun kidsGetConfig(promise: Promise) {
+    try {
+      val m = Arguments.createMap()
+      m.putBoolean("active", KidsPrefs.isActive(ctx))
+      m.putBoolean("running", KidsService.isRunning)
+      m.putBoolean("hasPin", KidsPrefs.hasPin(ctx))
+      val arr = Arguments.createArray()
+      KidsPrefs.allowed(ctx).forEach { arr.pushString(it) }
+      m.putArray("allowed", arr)
+      val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+      m.putBoolean("deviceSecure", km.isDeviceSecure)
+      m.putBoolean("strongLock", ShizukuManager.hasPermission())
+      promise.resolve(m)
+    } catch (e: Exception) {
+      promise.reject("KIDS_CFG_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun kidsSetAllowed(json: String, promise: Promise) {
+    try {
+      val arr = JSONArray(json)
+      KidsPrefs.setAllowed(ctx, (0 until arr.length()).map { arr.optString(it) })
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("KIDS_ALLOWED_ERR", e)
+    }
+  }
+
+  /** Set or change the parent PIN. Changing an existing PIN needs the old one. */
+  @ReactMethod
+  fun kidsSetPin(oldPin: String, newPin: String, promise: Promise) {
+    if (newPin.length < 4 || !newPin.all { it.isDigit() }) {
+      promise.resolve(false)
+      return
+    }
+    if (KidsPrefs.hasPin(ctx) && !KidsPrefs.checkPin(ctx, oldPin)) {
+      promise.resolve(false)
+      return
+    }
+    KidsPrefs.setPin(ctx, newPin)
+    promise.resolve(true)
+  }
+
+  /** Returns "OK" or why it can't start: NO_PIN, NO_APPS, NO_OVERLAY, NO_USAGE. */
+  @ReactMethod
+  fun kidsStart(promise: Promise) {
+    when {
+      !KidsPrefs.hasPin(ctx) -> promise.resolve("NO_PIN")
+      KidsPrefs.allowed(ctx).isEmpty() -> promise.resolve("NO_APPS")
+      !Settings.canDrawOverlays(ctx) -> promise.resolve("NO_OVERLAY")
+      !hasUsageAccess() -> promise.resolve("NO_USAGE")
+      else -> {
+        KidsPrefs.setActive(ctx, true)
+        KidsService.start(ctx)
+        promise.resolve("OK")
+      }
+    }
+  }
+
+  @ReactMethod
+  fun kidsStop(pin: String, promise: Promise) {
+    if (!KidsPrefs.checkPin(ctx, pin)) {
+      promise.resolve(false)
+      return
+    }
+    stopKidsNow()
+    promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun kidsUnlockWithDeviceCredential(promise: Promise) {
+    try {
+      val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+      val activity = ctx.currentActivity
+      @Suppress("DEPRECATION")
+      val intent = km.createConfirmDeviceCredentialIntent("Exit Kids Mode", "Confirm it's you to unlock the phone")
+      if (!km.isDeviceSecure || intent == null || activity == null) {
+        promise.resolve(false)
+        return
+      }
+      KidsPrefs.allowSystemFor(ctx, 120_000)
+      credPromise = promise
+      activity.startActivityForResult(intent, CRED_REQ)
+    } catch (e: Exception) {
+      KidsPrefs.allowSystemFor(ctx, 0)
+      promise.reject("KIDS_CRED_ERR", e)
+    }
+  }
+
+  private fun stopKidsNow() {
+    KidsPrefs.setActive(ctx, false)
+    KidsService.stop(ctx)
+    KidsService.releaseSystemLock(ctx) // also covers a service that already died
+  }
+
   /** Push edited profiles to a running Auto boost without restarting it. */
   @ReactMethod
   fun updateAutoProfiles(profilesJson: String, promise: Promise) {
@@ -217,6 +333,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun reconcile(promise: Promise) {
     try {
+      if (KidsPrefs.isActive(ctx) && !KidsService.isRunning) KidsService.start(ctx)
       if (!BoostService.isRunning) {
         BoostActions.revert(ctx)
         ShizukuActions.revert(ctx) { }

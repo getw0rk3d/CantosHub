@@ -45,6 +45,10 @@ class KidsService : Service() {
     private const val POLL_MS = 500L
     const val HOME_ALIAS = "com.cantoshub.KidsHome"
 
+    // Samsung Wallet's swipe-up-from-the-bottom card. It's an always-running service, so
+    // blocking the Wallet screen afterwards still flashed the card; we stop the service.
+    private const val WALLET = "com.samsung.android.spay"
+
     // Never block these: system UI, Android's own dialogs, runtime-permission prompts
     // and Google sign-in / purchase-free popups that allowed apps show.
     private val ALWAYS_OK = setOf(
@@ -68,16 +72,47 @@ class KidsService : Service() {
       ctx.startService(Intent(ctx, KidsService::class.java).setAction(ACTION_STOP))
     }
 
-    /** Undo the Shizuku-level changes (system bar + Home). Safe to call repeatedly. */
+    /**
+     * Undo Kids Mode's system changes. Safe to call repeatedly.
+     * - The Home alias is our own component, so it's switched off WITHOUT needing Shizuku;
+     *   Android then falls back to the normal launcher. (Requiring Shizuku here left
+     *   CantosHub stuck as Home whenever Shizuku had died, e.g. after a reboot.)
+     * - System-bar flags die with the Shizuku process anyway; reset them if it's alive.
+     */
     fun releaseSystemLock(ctx: Context) {
-      if (!ShizukuManager.hasPermission()) return
-      ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { }
-      val prev = KidsPrefs.prevHome(ctx)
-      if (prev.isNotEmpty()) {
-        ShizukuManager.exec(ctx, listOf("cmd", "package", "set-home-activity", prev)) { }
-      }
       setHomeAliasEnabled(ctx, false)
+      if (ShizukuManager.hasPermission()) {
+        ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { }
+        val prev = KidsPrefs.prevHome(ctx)
+        if (prev.isNotEmpty()) {
+          ShizukuManager.exec(ctx, listOf("cmd", "package", "set-home-activity", prev)) { }
+        }
+      }
       KidsPrefs.setPrevHome(ctx, "")
+      restartWalletIfStopped(ctx)
+    }
+
+    /** Opening Wallet once brings its swipe-up shortcut back; then return to CantosHub. */
+    private fun restartWalletIfStopped(ctx: Context) {
+      if (!KidsPrefs.walletStopped(ctx)) return
+      KidsPrefs.setWalletStopped(ctx, false)
+      val launch = ctx.packageManager.getLaunchIntentForPackage(WALLET) ?: return
+      try {
+        ctx.startActivity(launch.addFlags(
+          // Not left behind as an extra card in Recents.
+          Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or Intent.FLAG_ACTIVITY_NO_ANIMATION,
+        ))
+        Handler(Looper.getMainLooper()).postDelayed({
+          try {
+            ctx.startActivity(
+              Intent(ctx, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            )
+          } catch (e: Exception) {
+          }
+        }, 1500)
+      } catch (e: Exception) {
+      }
     }
 
     private fun setHomeAliasEnabled(ctx: Context, enabled: Boolean) {
@@ -99,6 +134,7 @@ class KidsService : Service() {
   private var lastFg: String? = null
   private var lastQuery = 0L
   private var lastBounce = 0L
+  private var ticks = 0
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -147,6 +183,7 @@ class KidsService : Service() {
       if (!isRunning) return
       try {
         check()
+        if (++ticks % 6 == 0) stopWalletSwipe()
       } catch (e: Exception) {
       }
       handler?.postDelayed(this, POLL_MS)
@@ -164,6 +201,16 @@ class KidsService : Service() {
     if (now - lastBounce > 1500) {
       lastBounce = now
       bringKidsScreen()
+    }
+  }
+
+  private fun stopWalletSwipe() {
+    if (!ShizukuManager.hasPermission()) return
+    ShizukuManager.exec(
+      this,
+      listOf("sh", "-c", "pidof $WALLET >/dev/null && am force-stop $WALLET && echo STOPPED"),
+    ) { out ->
+      if (out?.contains("STOPPED") == true) KidsPrefs.setWalletStopped(this, true)
     }
   }
 

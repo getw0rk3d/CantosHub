@@ -16,6 +16,7 @@ object KidsPrefs {
   private const val KEY_PIN_SALT = "pin_salt"
   private const val KEY_PREV_HOME = "prev_home"
   private const val KEY_SYSTEM_UNTIL = "system_until"
+  private const val KEY_WALLET_STOPPED = "wallet_stopped"
 
   private fun sp(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -57,6 +58,10 @@ object KidsPrefs {
    */
   fun allowSystemFor(ctx: Context, ms: Long) =
     sp(ctx).edit().putLong(KEY_SYSTEM_UNTIL, System.currentTimeMillis() + ms).commit()
+
+  /** Kids Mode stopped Samsung Wallet's swipe-up service; restart it when Kids Mode ends. */
+  fun walletStopped(ctx: Context) = sp(ctx).getBoolean(KEY_WALLET_STOPPED, false)
+  fun setWalletStopped(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_WALLET_STOPPED, v).commit()
 
   fun systemAllowed(ctx: Context) = System.currentTimeMillis() < sp(ctx).getLong(KEY_SYSTEM_UNTIL, 0L)
 }

@@ -333,7 +333,11 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun reconcile(promise: Promise) {
     try {
-      if (KidsPrefs.isActive(ctx) && !KidsService.isRunning) KidsService.start(ctx)
+      if (KidsPrefs.isActive(ctx)) {
+        if (!KidsService.isRunning) KidsService.start(ctx)
+      } else {
+        KidsService.releaseSystemLock(ctx) // e.g. CantosHub left as Home after Shizuku died
+      }
       if (!BoostService.isRunning) {
         BoostActions.revert(ctx)
         ShizukuActions.revert(ctx) { }

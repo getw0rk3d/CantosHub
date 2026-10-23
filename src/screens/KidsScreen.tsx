@@ -10,6 +10,7 @@ import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
 import { AppPickerModal } from './ProfilesScreen';
 import { useKidsLockSetup } from './useKidsLockSetup';
+import { offerHomeGiveBack } from './homeGiveBack';
 
 type PinStep = null | 'old' | 'new' | 'confirm';
 
@@ -29,6 +30,7 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
 
   useEffect(() => {
     store.refreshKids();
+    offerHomeGiveBack();   // e.g. Kids Mode was unlocked but the Home picker was dismissed
     CantosHub.listInstalledApps()
       .then(list => setLabels(Object.fromEntries(list.map(a => [a.packageName, a.label]))))
       .catch(() => {});
@@ -75,20 +77,38 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
         'Without Kids lock (or Shizuku) Android lets your kid pull down the notification shade and quick settings. Turn on Kids lock first for a full lock.',
         [
           { text: 'Turn on Kids lock', onPress: startLockSetup },
-          { text: 'Start anyway', onPress: doStart },
+          { text: 'Start anyway', onPress: withHome },
         ],
       );
       return;
     }
-    doStart();
+    withHome();
   };
 
-  const doStart = async () => {
+  // Without Shizuku, the Home button is locked the official way: Android's own
+  // "set as default Home app" prompt. Unlocking hands Home back to the normal launcher.
+  const withHome = () => {
+    if (kids?.strongLock || kids?.homeRole) { doStart(); return; }
+    Alert.alert(
+      'Lock the Home button too?',
+      'Android will ask you to make CantosHub your Home app — choose CantosHub and tap Set as default. Then Home always leads back to the kids screen.\n\nWhen you unlock Kids Mode, CantosHub opens Android’s Default home app list so you can switch back with one tap on One UI Home.',
+      [
+        { text: 'Skip', style: 'cancel', onPress: () => doStart() },
+        { text: 'Continue', onPress: () => doStart(true) },
+      ],
+    );
+  };
+
+  /** [withHomeRole]: also ask Android to make the kids screen the Home app. Asked only AFTER
+   *  Kids Mode is on: the app's self-check turns the kids Home off while Kids Mode is off,
+   *  which would cancel the choice the moment you come back from Android's prompt. */
+  const doStart = async (withHomeRole = false) => {
     setStarting(true);
     try {
       const r = await CantosHub.kidsStart();
       if (r === 'OK') {
         if (store.boostRunning) await store.stopBoost();
+        if (withHomeRole) await CantosHub.kidsRequestHomeRole();
         await store.refreshKids();
         return;
       }
@@ -215,8 +235,9 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           {kids?.strongLock
             ? '• Shizuku is on: the notification shade and Recents are disabled and CantosHub becomes the Home screen until you unlock.'
             : kids?.a11yLock
-              ? '• Kids lock is on: the notification shade, Recents and Home all lead straight back to the kids screen.'
-              : '• For a stronger lock (no notification shade or Recents), turn on Kids lock above or Shizuku in the Access tab.'}
+              ? '• Kids lock is on: the notification shade, Recents and other apps all lead straight back to the kids screen.'
+              : '• For a stronger lock (no notification shade or Recents), turn on Kids lock above.'}
+          {kids?.strongLock ? '' : '\n• Home button: when you start Kids Mode, CantosHub asks Android to make the kids screen your Home app (you confirm it). After you unlock, CantosHub opens the Default home app list so you can switch back with one tap. No Shizuku needed.'}
           {'\n'}• Kids Mode stays on after a restart until you unlock it.
         </Text>
       </SectionCard>

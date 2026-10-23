@@ -95,7 +95,12 @@ class KidsService : Service() {
      * - System-bar flags die with the Shizuku process anyway; reset them if it's alive.
      */
     fun releaseSystemLock(ctx: Context) {
-      setHomeAliasEnabled(ctx, false)
+      // Home borrowed through Android's prompt (no Shizuku): keep it until the parent has
+      // picked their usual Home again. Switching the kids Home off first left Android with no
+      // default, and its own "Select a Home app" sheet popped up over everything (where a tap
+      // without "Always" saves nothing). The app opens Default home app instead and switches
+      // the kids Home off once a new default exists (CantosHubModule.kidsGetConfig).
+      if (!(KidsPrefs.tookHome(ctx) && homeRoleHeld(ctx))) setHomeAliasEnabled(ctx, false)
       if (ShizukuManager.hasPermission()) {
         ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { }
         val prev = KidsPrefs.prevHome(ctx)
@@ -130,7 +135,15 @@ class KidsService : Service() {
       }
     }
 
-    private fun setHomeAliasEnabled(ctx: Context, enabled: Boolean) {
+    fun homeRoleHeld(ctx: Context): Boolean = try {
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+        (ctx.getSystemService(Context.ROLE_SERVICE) as android.app.role.RoleManager)
+          .isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
+    } catch (e: Exception) {
+      false
+    }
+
+    fun setHomeAliasEnabled(ctx: Context, enabled: Boolean) {
       try {
         ctx.packageManager.setComponentEnabledSetting(
           ComponentName(ctx.packageName, HOME_ALIAS),

@@ -321,9 +321,23 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                   setMoreFor(null);
                   if (!g) return;
                   if (!store.shizuku?.granted) {
+                    // No Shizuku: the launcher hides apps itself. Samsung's One UI Home has it
+                    // under its own settings, so open that page and say which row to tap.
                     Alert.alert(
-                      'Needs Shizuku',
-                      'Hiding games from the app drawer needs Shizuku (no root). Authorize it in the Access tab, then try again.',
+                      `Hide ${g.label}`,
+                      'Your Home screen can hide apps itself. On the next screen tap “Hide apps on Home and Apps screens”, select the game and tap Done.\n\nIt still shows here in Games, and Play works as usual.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Open',
+                          onPress: async () => {
+                            const where = await CantosHub.openLauncherHideApps();
+                            if (!where) {
+                              Alert.alert('Not available', 'This launcher can’t hide apps. Hiding from CantosHub directly is PRO (needs Shizuku).');
+                            }
+                          },
+                        },
+                      ],
                     );
                     return;
                   }

@@ -87,6 +87,30 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
 
   // Hidden games are disabled in the launcher, so they no longer appear in
   // listGames — fold them back in from our saved list so they live in CantosHub.
+  // A hidden game that shows up as installed+launchable again was re-enabled outside
+  // CantosHub (e.g. its App info Enable button): stop calling it hidden.
+  const { forgetHidden } = store;
+  useEffect(() => {
+    if (loading || showAll) return;
+    const visible = new Set(games.map(g => g.packageName));
+    forgetHidden(store.hiddenGames.filter(h => visible.has(h.packageName)).map(h => h.packageName));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [games, loading, showAll]);
+
+  // Without Shizuku a hidden (disabled) game comes back through its App info Enable button.
+  const unhideOrExplain = async (g: GameInfo): Promise<boolean> => {
+    if (store.shizuku?.granted) return store.unhideGame(g.packageName);
+    Alert.alert(
+      `Show ${g.label} again`,
+      'It was hidden with Shizuku, which isn’t running. On the next screen tap Enable, then come back.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open', onPress: () => { CantosHub.openAppInfo(g.packageName); } },
+      ],
+    );
+    return false;
+  };
+
   const hiddenSet = new Set(store.hiddenGames.map(h => h.packageName));
   const hiddenAsGames: GameInfo[] = store.hiddenGames
     .filter(h => !games.some(g => g.packageName === h.packageName))
@@ -194,7 +218,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
               const hidden = hiddenSet.has(g.packageName);
               const played = fmtTime(g.totalTimeMs);
               const onPlay = async () => {
-                if (hidden) await store.unhideGame(g.packageName);
+                if (hidden && !(await unhideOrExplain(g))) return;
                 if (profile) await store.boostGame(profile);
                 await CantosHub.launchApp(g.packageName);
               };
@@ -310,7 +334,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 onPress={async () => {
                   const g = moreFor;
                   setMoreFor(null);
-                  if (g) await store.unhideGame(g.packageName);
+                  if (g) await unhideOrExplain(g);
                 }}
               />
             ) : (

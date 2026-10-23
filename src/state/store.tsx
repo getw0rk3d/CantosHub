@@ -29,6 +29,8 @@ import {
 } from '../native/CantosHub';
 
 const STORAGE_KEY = 'cantoshub_state_v1';
+/** Last save that loaded fine; used if the main save is ever missing or damaged. */
+const BACKUP_KEY = 'cantoshub_state_v1_backup';
 const LAST_SEEN_KEY = 'cantoshub_last_seen_code';
 const VERSIONS_URL =
   'https://raw.githubusercontent.com/getw0rk3d/CantosHub/main/versions.json';
@@ -110,6 +112,8 @@ type Store = {
   hiddenGames: HiddenGame[];
   hideGame: (game: HiddenGame) => Promise<boolean>;
   unhideGame: (packageName: string) => Promise<boolean>;
+  /** Drop "hidden" records for games that are visible again (re-enabled outside CantosHub). */
+  forgetHidden: (packageNames: string[]) => void;
 
   /** Apps the user added to Games (Android doesn't tag them as games). */
   addedGames: HiddenGame[];
@@ -354,6 +358,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setAddedGames(prev => prev.filter(a => a.packageName !== packageName));
   }, []);
 
+  const forgetHidden = useCallback((packageNames: string[]) => {
+    if (!packageNames.length) return;
+    setHiddenGames(prev => prev.filter(h => !packageNames.includes(h.packageName)));
+  }, []);
+
   const unhideGame = useCallback(async (packageName: string): Promise<boolean> => {
     const ok = await CantosHub.unhideApp(packageName);
     if (ok) setHiddenGames(prev => prev.filter(h => h.packageName !== packageName));
@@ -501,41 +510,79 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Hydrate persisted profiles + settings once.
+  //
+  // NEVER SAVE OVER DATA WE COULD NOT READ. This used to swallow a failed read (or a damaged
+  // save) and mark the store hydrated anyway, so the very next save wrote the empty defaults
+  // over the user's folders, game bindings and hidden/added games. Now: a read that keeps
+  // failing leaves saving switched off for this session; a save that won't parse is kept
+  // aside and the last good copy (BACKUP_KEY, refreshed on every good load) is used instead.
   useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then(raw => {
-        if (cancelled || !raw) return;
-        const saved = JSON.parse(raw) as Partial<{
-          profiles: BoostProfile[];
-          activeProfileId: string;
-          autoMode: boolean;
-          showOverlay: boolean;
-          freeRamOnBoost: boolean;
-          folders: Folder[];
-          hiddenGames: HiddenGame[];
-          addedGames: HiddenGame[];
-        }>;
-        if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
-          setProfiles(saved.profiles);
-          const ids = saved.profiles.map(p => p.id);
-          setActiveProfileId(
-            saved.activeProfileId && ids.includes(saved.activeProfileId)
-              ? saved.activeProfileId
-              : saved.profiles[0].id,
-          );
+    const readWithRetry = async (key: string): Promise<string | null> => {
+      for (let i = 0; i < 3; i++) {
+        try {
+          return await AsyncStorage.getItem(key);
+        } catch {
+          await new Promise<void>(r => setTimeout(() => r(), 300 * (i + 1)));
         }
-        if (typeof saved.autoMode === 'boolean') setAutoMode(saved.autoMode);
-        if (typeof saved.showOverlay === 'boolean') setShowOverlay(saved.showOverlay);
-        if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
-        if (Array.isArray(saved.folders)) setFolders(saved.folders);
-        if (Array.isArray(saved.hiddenGames)) setHiddenGames(saved.hiddenGames);
-        if (Array.isArray(saved.addedGames)) setAddedGames(saved.addedGames);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setHydrated(true);
-      });
+      }
+      throw new Error('storage unreadable');
+    };
+    const apply = (saved: Partial<{
+      profiles: BoostProfile[];
+      activeProfileId: string;
+      autoMode: boolean;
+      showOverlay: boolean;
+      freeRamOnBoost: boolean;
+      folders: Folder[];
+      hiddenGames: HiddenGame[];
+      addedGames: HiddenGame[];
+    }>) => {
+      if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
+        setProfiles(saved.profiles);
+        const ids = saved.profiles.map(p => p.id);
+        setActiveProfileId(
+          saved.activeProfileId && ids.includes(saved.activeProfileId)
+            ? saved.activeProfileId
+            : saved.profiles[0].id,
+        );
+      }
+      if (typeof saved.autoMode === 'boolean') setAutoMode(saved.autoMode);
+      if (typeof saved.showOverlay === 'boolean') setShowOverlay(saved.showOverlay);
+      if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
+      if (Array.isArray(saved.folders)) setFolders(saved.folders);
+      if (Array.isArray(saved.hiddenGames)) setHiddenGames(saved.hiddenGames);
+      if (Array.isArray(saved.addedGames)) setAddedGames(saved.addedGames);
+    };
+    (async () => {
+      let raw: string | null;
+      try {
+        raw = await readWithRetry(STORAGE_KEY);
+      } catch {
+        return;                       // unreadable: keep saving OFF so nothing is overwritten
+      }
+      if (cancelled) return;
+      let parsed: any = null;
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          AsyncStorage.setItem(`${STORAGE_KEY}_damaged_${Date.now()}`, raw).catch(() => {});
+        }
+      }
+      if (!parsed) {
+        // Missing or damaged: fall back to the last good copy, if there is one.
+        const backup = await AsyncStorage.getItem(BACKUP_KEY).catch(() => null);
+        if (backup) {
+          try { parsed = JSON.parse(backup); } catch { parsed = null; }
+        }
+      } else if (raw) {
+        AsyncStorage.setItem(BACKUP_KEY, raw).catch(() => {});
+      }
+      if (cancelled) return;
+      if (parsed) apply(parsed);
+      setHydrated(true);
+    })();
     return () => {
       cancelled = true;
     };
@@ -585,6 +632,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     hiddenGames,
     hideGame,
     unhideGame,
+    forgetHidden,
     addedGames,
     addGames,
     removeAddedGame,

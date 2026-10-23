@@ -1,6 +1,6 @@
 {
-  "versionCode": 19,
-  "versionName": "1.3.2",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.2/CantosHub-1.3.2.apk",
-  "notes": "NEW: guided setup walks you through every permission. Kids Mode locks the Home button without Shizuku. Hide games without Shizuku. Shizuku-only features are now marked PRO."
+  "versionCode": 20,
+  "versionName": "1.3.3",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.3/CantosHub-1.3.3.apk",
+  "notes": "Fixes: swiping out of games in Kids Mode, a freeze while Shizuku commands ran, and saved settings that could be wiped. New: No profile option in the Games tab."
 }

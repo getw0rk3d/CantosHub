@@ -22,6 +22,7 @@ import android.os.Process
 import android.provider.Settings
 import android.app.Activity
 import android.app.KeyguardManager
+import android.app.role.RoleManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
@@ -59,8 +60,18 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   // "Forgot Kids PIN": the phone's own lock-screen check unlocks Kids Mode.
   private var credPromise: Promise? = null
+  private var homePromise: Promise? = null
   private val activityListener = object : BaseActivityEventListener() {
     override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+      if (requestCode == HOME_REQ) {
+        val held = isHomeRoleHeld()
+        if (!held) KidsPrefs.setTookHome(ctx, false)
+        // Declined: put the Home alias back the way it was so CantosHub isn't offered as a launcher.
+        if (!held && !KidsPrefs.isActive(ctx)) KidsService.setHomeAliasEnabled(ctx, false)
+        homePromise?.resolve(held)
+        homePromise = null
+        return
+      }
       if (requestCode != CRED_REQ) return
       KidsPrefs.allowSystemFor(ctx, 0)
       val ok = resultCode == Activity.RESULT_OK
@@ -90,6 +101,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   companion object {
     private const val SHIZUKU_REQ = 4001
     private const val CRED_REQ = 4002
+    private const val HOME_REQ = 4003
   }
 
   // --- Permissions ---
@@ -217,6 +229,16 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       m.putBoolean("deviceSecure", km.isDeviceSecure)
       m.putBoolean("strongLock", ShizukuManager.hasPermission())
       m.putBoolean("a11yLock", KidsAccessibilityService.isEnabled(ctx))
+      m.putBoolean("homeRole", isHomeRoleHeld())
+      // Kids Mode borrowed Home and has ended: keep asking until a real default Home is saved.
+      // Once a real default exists again, hand the Home button back for good.
+      val owesHome = KidsPrefs.tookHome(ctx) && !KidsPrefs.isActive(ctx)
+      val handedBack = owesHome && defaultHomeSet()
+      if (handedBack) {
+        KidsPrefs.setTookHome(ctx, false)
+        KidsService.setHomeAliasEnabled(ctx, false)
+      }
+      m.putBoolean("homeRoleTaken", owesHome && !handedBack)
       m.putString("restricted", restrictedSettingsState())
       promise.resolve(m)
     } catch (e: Exception) {
@@ -334,6 +356,94 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   } catch (e: Exception) {
     "unknown"
+  }
+
+  private fun isHomeRoleHeld(): Boolean = KidsService.homeRoleHeld(ctx)
+
+  /**
+   * Kids Mode without Shizuku: make the kids screen the Home app through Android's own
+   * "set as default Home app" prompt (the user confirms it). The Home alias is switched on
+   * first so CantosHub qualifies. Call it AFTER kidsStart: the app's self-heal (reconcile)
+   * switches the alias off whenever Kids Mode is not active, which would cancel the role.
+   * When Kids Mode ends the alias goes off, and the parent re-picks their Home through
+   * openHomeChooser. Resolves true if CantosHub is now the Home app.
+   */
+  @ReactMethod
+  fun kidsRequestHomeRole(promise: Promise) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) { promise.resolve(false); return }
+    try {
+      KidsService.setHomeAliasEnabled(ctx, true)
+      val rm = ctx.getSystemService(Context.ROLE_SERVICE) as RoleManager
+      if (rm.isRoleHeld(RoleManager.ROLE_HOME)) { promise.resolve(true); return }
+      val activity = ctx.currentActivity
+      if (activity == null || !rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
+        KidsService.setHomeAliasEnabled(ctx, KidsPrefs.isActive(ctx))
+        promise.resolve(false)
+        return
+      }
+      homePromise?.resolve(false)
+      homePromise = promise
+      // Recorded now, not in onActivityResult: granting the role relaunches CantosHub as the
+      // new Home and the result never arrives. Harmless if declined - the unlock only keeps
+      // Home when the role is really held (KidsService.releaseSystemLock).
+      KidsPrefs.setTookHome(ctx, true)
+      activity.startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_HOME), HOME_REQ)
+    } catch (e: Exception) {
+      homePromise = null
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * Hide games without Shizuku: open the launcher's own settings, where Samsung's One UI
+   * Home has "Hide apps on Home and Apps screens". Resolves "samsung" when that page opened,
+   * "home" for the generic Home settings, "" if neither exists.
+   */
+  @ReactMethod
+  fun openLauncherHideApps(promise: Promise) {
+    val samsung = Intent().setClassName(
+      "com.sec.android.app.launcher", "com.android.homescreen.settings.HomeScreenSettingsActivity",
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try { ctx.startActivity(samsung); promise.resolve("samsung"); return } catch (e: Exception) {}
+    try {
+      ctx.startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve("home")
+    } catch (e: Exception) {
+      promise.resolve("")
+    }
+  }
+
+  /** A default Home app is saved (Home doesn't land on Android's "Select a Home app"). */
+  private fun defaultHomeSet(): Boolean = try {
+    val ri = ctx.packageManager.resolveActivity(
+      Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY,
+    )
+    val pkg = ri?.activityInfo?.packageName
+    pkg != null && pkg != "android" && pkg != ctx.packageName
+  } catch (e: Exception) {
+    true
+  }
+
+  /**
+   * After Kids Mode: open Settings > Default apps > Home app so the parent picks their usual
+   * Home again (Kids Mode borrowed the Home role). One tap there saves it - unlike the
+   * "Select a Home app" sheet, where tapping the icon without "Always" saves nothing.
+   */
+  @ReactMethod
+  fun openHomeChooser(promise: Promise) {
+    val tries = listOf(
+      Intent(Settings.ACTION_HOME_SETTINGS),
+      Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+    )
+    for (i in tries) {
+      try {
+        ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        promise.resolve(true)
+        return
+      } catch (e: Exception) {
+      }
+    }
+    promise.resolve(false)
   }
 
   private fun stopKidsNow() {

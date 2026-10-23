@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon';
 import { PinPad } from '../components/PinPad';
 import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
+import { offerHomeGiveBack } from './homeGiveBack';
 
 const KID_BG = '#1B1446';
 const TILE_COLORS = ['#FF6B6B', '#4DABF7', '#51CF66', '#FFD43B', '#CC5DE8', '#FF922B'];
@@ -43,6 +44,7 @@ export default function KidsHomeScreen() {
       setUnlocking(false);
       setError(null);
       await store.refreshKids();
+      offerHomeGiveBack();
     } else {
       setError('Wrong PIN — try again');
     }
@@ -53,6 +55,7 @@ export default function KidsHomeScreen() {
     if (ok) {
       setUnlocking(false);
       await store.refreshKids();
+      offerHomeGiveBack();
     } else {
       setError("Couldn't confirm with the phone's lock");
     }

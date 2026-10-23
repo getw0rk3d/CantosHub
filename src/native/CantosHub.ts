@@ -117,6 +117,9 @@ type NativeShape = {
   kidsStop(pin: string): Promise<boolean>;
   kidsUnlockWithDeviceCredential(): Promise<boolean>;
   openAccessibilitySettings(): Promise<boolean>;
+  kidsRequestHomeRole(): Promise<boolean>;
+  openHomeChooser(): Promise<boolean>;
+  openLauncherHideApps(): Promise<'samsung' | 'home' | ''>;
   getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
@@ -159,6 +162,8 @@ export type KidsConfig = {
   strongLock: boolean; // Shizuku available: also locks the shade/Recents + Home
   a11yLock: boolean; // CantosHub Kids lock accessibility helper is on (no Shizuku needed)
   restricted: 'allowed' | 'denied' | 'unknown'; // Android 13+ restricted settings for sideloaded apps
+  homeRole: boolean; // CantosHub is the default Home app (Kids Mode Home without Shizuku)
+  homeRoleTaken: boolean; // Kids Mode ended but still holds the borrowed Home: offer the picker
 };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
@@ -254,7 +259,7 @@ export const CantosHub = {
   // --- Kids Mode ---
   async kidsGetConfig(): Promise<KidsConfig> {
     if (!native) {
-      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown' };
+      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown', homeRole: false, homeRoleTaken: false };
     }
     return native.kidsGetConfig();
   },
@@ -287,6 +292,24 @@ export const CantosHub = {
   async openAccessibilitySettings(): Promise<boolean> {
     if (!native) return false;
     return native.openAccessibilitySettings();
+  },
+
+  /** Android's "set as default Home app" prompt for the kids screen. True if granted. */
+  async kidsRequestHomeRole(): Promise<boolean> {
+    if (!native) return false;
+    return native.kidsRequestHomeRole();
+  },
+
+  /** After Kids Mode: Android's "Select a Home app" so the parent picks their usual Home. */
+  async openHomeChooser(): Promise<boolean> {
+    if (!native) return false;
+    return native.openHomeChooser();
+  },
+
+  /** Open the launcher's settings (Samsung: "Hide apps on Home and Apps screens"). */
+  async openLauncherHideApps(): Promise<'samsung' | 'home' | ''> {
+    if (!native) return '';
+    return native.openLauncherHideApps();
   },
 
   /** Push edited profiles to a running Auto boost (no restart, no re-boost). */

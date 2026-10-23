@@ -5,11 +5,12 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Badge, PrimaryButton, SectionCard, StatusDot } from '../components/ui';
+import { Badge, PrimaryButton, ProBadge, SectionCard, StatusDot } from '../components/ui';
 import { CantosHub, PermissionKey, VersionInfo } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
 import ShizukuSetup from './ShizukuSetup';
+import { GUIDE_ORDER, usePermissionGuide } from './usePermissionGuide';
 
 const PERMISSIONS: { key: PermissionKey; label: string; why: string }[] = [
   {
@@ -51,6 +52,10 @@ export default function PermissionsScreen() {
   const { shizuku, update } = store;
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
+  const { refreshPermissions } = store;
+  const startGuide = usePermissionGuide(refreshPermissions);
+  const ready = permissions ? GUIDE_ORDER.filter(k => permissions[k]).length : 0;
+  const total = GUIDE_ORDER.length;
 
   useEffect(() => {
     store.refreshPermissions();
@@ -67,6 +72,23 @@ export default function PermissionsScreen() {
         CantosHub is 100% no-root. It can only do what you allow here — tap a row to open
         the system settings and grant it. Revoke any of these any time.
       </Text>
+
+      {/* Guided setup: one tap walks through every missing permission (no Shizuku needed). */}
+      <SectionCard title="Setup">
+        <Text style={styles.note}>
+          {ready === total
+            ? 'Everything CantosHub needs is on.'
+            : `${ready} of ${total} ready. CantosHub opens each Settings screen for you and tells you which switch to turn on.`}
+        </Text>
+        <View style={styles.progress}>
+          <View style={[styles.progressFill, { width: `${(ready / total) * 100}%` }]} />
+        </View>
+        {ready < total && (
+          <View style={styles.setupBtn}>
+            <PrimaryButton title={ready === 0 ? 'Start setup' : 'Continue setup'} onPress={startGuide} />
+          </View>
+        )}
+      </SectionCard>
 
       <SectionCard
         right={
@@ -98,7 +120,7 @@ export default function PermissionsScreen() {
       </SectionCard>
 
       <SectionCard
-        title="Pro tier · Shizuku"
+        title="Extras · Shizuku (optional)"
         right={
           shizuku ? (
             <Badge
@@ -108,10 +130,23 @@ export default function PermissionsScreen() {
           ) : undefined
         }>
         <Text style={styles.note}>
-          <Text style={styles.bold}>Optional.</Text> Everything else — boost, Auto by game,
-          Free RAM, the overlay — works without it. <Text style={styles.bold}>Shizuku</Text>{' '}
-          only adds Pro extras (per-game resolution scaling, freezing apps, system-wide cache
-          trim) with <Text style={styles.bold}>still no root</Text>.
+          <Text style={styles.bold}>You don’t need it.</Text> Boosting, Auto by game, Free RAM,
+          the overlay and Kids Mode all work with the permissions above. Android only lets a
+          shell do a few things, so these are marked <ProBadge style={styles.proMid} /> and
+          need <Text style={styles.bold}>Shizuku</Text> (still no root):
+        </Text>
+        {[
+          'Lower resolution for more FPS',
+          'Freeze background apps while gaming',
+          'Clear every app’s cache at once',
+          'Live FPS in the overlay',
+          'Block Samsung Game Booster',
+          'Hide games instantly (without it, CantosHub opens Samsung’s Hide apps page)',
+        ].map(t => (
+          <Text key={t} style={styles.step}>•  {t}</Text>
+        ))}
+        <Text style={[styles.note, { marginTop: spacing.sm }]}>
+          Shizuku needs Wi-Fi to start and stops when the phone restarts.
         </Text>
 
         {shizuku?.granted ? (
@@ -182,4 +217,7 @@ const styles = StyleSheet.create({
   bold: { color: colors.text, fontWeight: '700' },
   grantedNote: { color: colors.accent, marginTop: spacing.sm },
   setupBtn: { marginTop: spacing.md },
+  progress: { height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.08)', marginTop: spacing.md, overflow: 'hidden' },
+  progressFill: { height: 8, borderRadius: 4, backgroundColor: colors.accent },
+  proMid: { marginTop: 2 },
 });

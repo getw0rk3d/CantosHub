@@ -13,7 +13,7 @@ import {
   Keyboard,
   View,
 } from 'react-native';
-import { Badge, PrimaryButton, SectionCard } from '../components/ui';
+import { Badge, PrimaryButton, ProBadge, SectionCard } from '../components/ui';
 import { BoostProfile, CantosHub, InstalledApp } from '../native/CantosHub';
 import { ToggleKey, useStore } from '../state/store';
 import { colors, radius, spacing } from '../theme';
@@ -193,8 +193,9 @@ function ProfileCard({
 
       {/* Pro tier (Shizuku) */}
       <View style={styles.proHeader}>
-        <Text style={styles.proTitle}>PRO · Shizuku</Text>
-        {!shizukuGranted && <Text style={styles.proLocked}>Authorize in Access →</Text>}
+        <ProBadge />
+        <Text style={styles.proTitle}>  Needs Shizuku</Text>
+        {!shizukuGranted && <Text style={styles.proLocked}>Set up in Access →</Text>}
       </View>
 
       <View style={[styles.proBlock, !shizukuGranted && styles.disabled]} pointerEvents={shizukuGranted ? 'auto' : 'none'}>

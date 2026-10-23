@@ -17,6 +17,7 @@ object KidsPrefs {
   private const val KEY_PREV_HOME = "prev_home"
   private const val KEY_SYSTEM_UNTIL = "system_until"
   private const val KEY_WALLET_STOPPED = "wallet_stopped"
+  private const val KEY_TOOK_HOME = "took_home"
 
   private fun sp(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -62,6 +63,14 @@ object KidsPrefs {
   /** Kids Mode stopped Samsung Wallet's swipe-up service; restart it when Kids Mode ends. */
   fun walletStopped(ctx: Context) = sp(ctx).getBoolean(KEY_WALLET_STOPPED, false)
   fun setWalletStopped(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_WALLET_STOPPED, v).commit()
+
+  /**
+   * Kids Mode took the Home role through Android's prompt (no Shizuku). Android does not
+   * hand it back when the kids Home switches off - with two launchers it asks "Select a Home
+   * app" - so the app walks the parent through that once Kids Mode is unlocked.
+   */
+  fun tookHome(ctx: Context) = sp(ctx).getBoolean(KEY_TOOK_HOME, false)
+  fun setTookHome(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_TOOK_HOME, v).commit()
 
   fun systemAllowed(ctx: Context) = System.currentTimeMillis() < sp(ctx).getLong(KEY_SYSTEM_UNTIL, 0L)
 }

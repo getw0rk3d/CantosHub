@@ -145,7 +145,7 @@ export default function DashboardScreen({
       setCleanMsg(
         r.systemTrim
           ? `System-wide cache trimmed (Shizuku) · app cache ${own} MB`
-          : `App cache cleared (${own} MB). System-wide clearing needs Shizuku.`,
+          : `App cache cleared (${own} MB). Clearing every app’s cache at once is PRO (needs Shizuku).`,
       );
     } catch {
       setCleanMsg('Could not clear cache.');
@@ -331,7 +331,7 @@ export default function DashboardScreen({
         />
         <ToggleRow
           label="Show overlay HUD"
-          description="Battery · thermal · RAM on top of your game"
+          description={store.shizuku?.granted ? "FPS · battery · thermal · RAM on top of your game" : "Battery · thermal · RAM on top of your game (live FPS is PRO: needs Shizuku)"}
           value={showOverlay}
           onValueChange={store.setShowOverlay}
           locked={!!permissions && !permissions.overlay}
@@ -395,8 +395,9 @@ export default function DashboardScreen({
             value={store.gameBooster.blocked}
             onValueChange={onToggleBooster}
             locked={!store.shizuku?.granted}
-            lockedHint="Needs Shizuku (Access tab)"
+            lockedHint="Needs Shizuku — set it up in Access"
             onPressLocked={onGoPermissions}
+            pro
           />
           {!!boosterMsg && <Text style={styles.freeMsg}>{boosterMsg}</Text>}
         </SectionCard>

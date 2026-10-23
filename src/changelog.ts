@@ -4,6 +4,11 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.2':
+    '• NEW: guided setup (Access tab). One tap walks through every permission: CantosHub opens the right Settings screen, says which switch to turn on and checks it when you come back.' +
+    '\n• Kids Mode no longer needs Shizuku for the Home button: Android asks you to make the kids screen your Home app, and after you unlock CantosHub opens the Default home app list so you switch back with one tap.' +
+    '\n• Hide games without Shizuku: CantosHub opens your Home screen’s own Hide apps setting.' +
+    '\n• Features that only work with Shizuku are now clearly marked PRO.',
   '1.3.1':
     '• Fixed: in the Kids apps / Freeze apps picker, tapping an app while the keyboard was open (after searching) just closed the keyboard instead of selecting it. One tap now selects.' +
     '\n• Kids Mode: the Samsung Wallet swipe-up from the bottom no longer pops up the card while Kids Mode is on (it comes back when you unlock).' +

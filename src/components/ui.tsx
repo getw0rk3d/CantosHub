@@ -32,6 +32,15 @@ export function SectionCard({
   );
 }
 
+/** "PRO" pill for features that need Shizuku (Android only lets the shell do them). */
+export function ProBadge({ style }: { style?: object }) {
+  return (
+    <View style={[styles.pro, style]}>
+      <Text style={styles.proText}>PRO</Text>
+    </View>
+  );
+}
+
 export function ToggleRow({
   label,
   description,
@@ -40,6 +49,7 @@ export function ToggleRow({
   locked,
   lockedHint,
   onPressLocked,
+  pro,
 }: {
   label: string;
   description?: string;
@@ -48,6 +58,8 @@ export function ToggleRow({
   locked?: boolean;
   lockedHint?: string;
   onPressLocked?: () => void;
+  /** Needs Shizuku: shows the PRO pill next to the label. */
+  pro?: boolean;
 }) {
   return (
     <Pressable
@@ -55,7 +67,10 @@ export function ToggleRow({
       onPress={locked ? onPressLocked : undefined}
       android_ripple={locked ? { color: colors.border } : undefined}>
       <View style={styles.rowText}>
-        <Text style={styles.rowLabel}>{label}</Text>
+        <View style={styles.labelLine}>
+          <Text style={styles.rowLabel}>{label}</Text>
+          {pro && <ProBadge style={styles.proInline} />}
+        </View>
         {!!description && <Text style={styles.rowDesc}>{description}</Text>}
         {locked && !!lockedHint && (
           <Text style={styles.lockedHint}>🔒 {lockedHint}</Text>
@@ -223,4 +238,15 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: 11, fontWeight: '700' },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  labelLine: { flexDirection: 'row', alignItems: 'center' },
+  pro: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,184,0,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,0,0.55)',
+  },
+  proText: { color: '#FFB800', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  proInline: { marginLeft: 8 },
 });

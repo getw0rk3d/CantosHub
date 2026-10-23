@@ -103,6 +103,8 @@ type Store = {
   deleteProfile: (id: string) => void;
   /** Bind a game to a profile (and unbind it from any other profile). */
   assignGameToProfile: (profileId: string, packageName: string) => void;
+  /** Take the game off whichever profile it is bound to (no profile assigned). */
+  unassignGame: (packageName: string) => void;
 
   folders: Folder[];
   addFolder: (name: string) => string;
@@ -303,6 +305,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return p;
       }),
     );
+  }, []);
+
+  const unassignGame = useCallback((packageName: string) => {
+    setProfiles(prev => prev.map(p => (p.packageName === packageName ? { ...p, packageName: undefined } : p)));
   }, []);
 
   const addFolder = useCallback((name: string): string => {
@@ -625,6 +631,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addProfile,
     deleteProfile,
     assignGameToProfile,
+    unassignGame,
     folders,
     addFolder,
     deleteFolder,

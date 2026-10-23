@@ -273,6 +273,10 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
           }
           setAssignFor(null);
         }}
+        onClear={() => {
+          if (assignFor) store.unassignGame(assignFor.packageName);
+          setAssignFor(null);
+        }}
       />
 
       {/* Per-game "More" actions */}
@@ -553,13 +557,17 @@ function ProfilePickerModal({
   onClose,
   onPick,
   onCreate,
+  onClear,
 }: {
   game: GameInfo | null;
   onClose: () => void;
   onPick: (profileId: string) => void;
   onCreate: () => void;
+  /** No profile: the game is played as-is, Auto mode leaves it alone. */
+  onClear: () => void;
 }) {
   const store = useStore();
+  const unbound = !store.profiles.some(p => p.packageName === game?.packageName);
   return (
     <Modal visible={!!game} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
@@ -571,6 +579,19 @@ function ProfilePickerModal({
             data={store.profiles}
             keyExtractor={p => p.id}
             style={styles.modalList}
+            ListHeaderComponent={
+              <Pressable style={styles.profRow} onPress={onClear}>
+                <View style={styles.noProfText}>
+                  <Text style={styles.profName}>No profile</Text>
+                  <Text style={styles.noProfSub}>Play it as-is — Auto mode leaves this game alone</Text>
+                </View>
+                {unbound ? (
+                  <Badge text="CURRENT" color={colors.accent} />
+                ) : (
+                  <Text style={styles.link}>Choose</Text>
+                )}
+              </Pressable>
+            }
             renderItem={({ item }) => {
               const bound = item.packageName === game?.packageName;
               return (
@@ -601,6 +622,8 @@ function ProfilePickerModal({
 }
 
 const styles = StyleSheet.create({
+  noProfText: { flex: 1, paddingRight: spacing.md },
+  noProfSub: { color: colors.textDim, fontSize: 12, marginTop: 2 },
   root: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

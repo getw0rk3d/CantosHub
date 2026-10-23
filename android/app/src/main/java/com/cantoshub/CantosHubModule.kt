@@ -230,6 +230,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       m.putBoolean("strongLock", ShizukuManager.hasPermission())
       m.putBoolean("a11yLock", KidsAccessibilityService.isEnabled(ctx))
       m.putBoolean("homeRole", isHomeRoleHeld())
+      m.putBoolean("gestureNav", KidsService.usesGestureNav(ctx))
       // Kids Mode borrowed Home and has ended: keep asking until a real default Home is saved.
       // Once a real default exists again, hand the Home button back for good.
       val owesHome = KidsPrefs.tookHome(ctx) && !KidsPrefs.isActive(ctx)
@@ -370,7 +371,8 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
    */
   @ReactMethod
   fun kidsRequestHomeRole(promise: Promise) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) { promise.resolve(false); return }
+    // Swipe navigation stops working while another app is Home on Samsung (usesGestureNav).
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || KidsService.usesGestureNav(ctx)) { promise.resolve(false); return }
     try {
       KidsService.setHomeAliasEnabled(ctx, true)
       val rm = ctx.getSystemService(Context.ROLE_SERVICE) as RoleManager

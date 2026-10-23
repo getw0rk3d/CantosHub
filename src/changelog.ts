@@ -5,7 +5,8 @@
  */
 export const CHANGELOG: Record<string, string> = {
   '1.3.3':
-    '• Fixed: CantosHub could freeze (“not responding”) while a Shizuku command was running. Those now run in the background.' +
+    '• Fixed: in Kids Mode on phones that use swipe gestures, swiping up could not leave a game. Kids Mode no longer takes over the Home app there (Samsung turns its gestures off when another app is Home), so a Home swipe goes straight back to the kids screen, and there’s nothing to switch back when you unlock.' +
+    '\n• Fixed: CantosHub could freeze (“not responding”) while a Shizuku command was running. Those now run in the background.' +
     '\n• Fixed: your folders, game bindings and hidden/added games could be wiped if the app failed to read its saved settings at startup. It now never saves over data it couldn’t read, and keeps a backup copy.' +
     '\n• Samsung Game Booster blocked earlier with Shizuku can now be turned back on without it (CantosHub opens each part’s App info so you tap Enable).' +
     '\n• Hidden games can be shown again without Shizuku, and the Boost tab tells you if a boost’s PRO changes (frozen apps, lower resolution) are still waiting for Shizuku to be undone.',

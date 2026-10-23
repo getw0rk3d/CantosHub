@@ -167,6 +167,7 @@ export type KidsConfig = {
   restricted: 'allowed' | 'denied' | 'unknown'; // Android 13+ restricted settings for sideloaded apps
   homeRole: boolean; // CantosHub is the default Home app (Kids Mode Home without Shizuku)
   homeRoleTaken: boolean; // Kids Mode ended but still holds the borrowed Home: offer the picker
+  gestureNav: boolean; // phone uses swipe gestures: Kids Mode must not take over Home (Samsung disables gestures)
 };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
@@ -262,7 +263,7 @@ export const CantosHub = {
   // --- Kids Mode ---
   async kidsGetConfig(): Promise<KidsConfig> {
     if (!native) {
-      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown', homeRole: false, homeRoleTaken: false };
+      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown', homeRole: false, homeRoleTaken: false, gestureNav: false };
     }
     return native.kidsGetConfig();
   },

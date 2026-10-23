@@ -135,6 +135,20 @@ class KidsService : Service() {
       }
     }
 
+    /**
+     * The phone navigates with swipe gestures (AOSP navigation_mode 1/2; Samsung's is 3).
+     * Kids Mode must then NOT make itself the Home app: Samsung only runs its swipe
+     * gestures while One UI Home is the default Home ("gesture disabled or blocked" in the
+     * log), so the Home swipe stopped working and a kid could not leave a game at all. With
+     * gestures, swiping Home briefly shows One UI Home and the lock sends the kid straight
+     * back to the kids screen instead.
+     */
+    fun usesGestureNav(ctx: Context): Boolean = try {
+      Settings.Secure.getInt(ctx.contentResolver, "navigation_mode", 0) != 0
+    } catch (e: Exception) {
+      false
+    }
+
     fun homeRoleHeld(ctx: Context): Boolean = try {
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
         (ctx.getSystemService(Context.ROLE_SERVICE) as android.app.role.RoleManager)
@@ -193,8 +207,9 @@ class KidsService : Service() {
 
   private fun applySystemLock() {
     if (!ShizukuManager.hasPermission()) return
-    // Remember the current Home once, then make CantosHub's kids screen the Home app.
-    if (KidsPrefs.prevHome(this).isEmpty()) {
+    // Remember the current Home once, then make CantosHub's kids screen the Home app -
+    // only with button navigation (see usesGestureNav).
+    if (KidsPrefs.prevHome(this).isEmpty() && !usesGestureNav(this)) {
       ShizukuManager.exec(
         this,
         listOf("cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME"),

@@ -119,6 +119,10 @@ object ShizukuActions {
     }
   }
 
+  /** What a boost changed that still needs Shizuku to undo: (frozen app count, resolution lowered). */
+  fun pending(ctx: Context): Pair<Int, Boolean> =
+    suspendedList(ctx).size to ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_RES_CHANGED, false)
+
   private fun suspendedList(ctx: Context): List<String> =
     (ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SUSPENDED, "") ?: "")
       .split(",")

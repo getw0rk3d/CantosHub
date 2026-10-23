@@ -87,6 +87,30 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
 
   // Hidden games are disabled in the launcher, so they no longer appear in
   // listGames — fold them back in from our saved list so they live in CantosHub.
+  // A hidden game that shows up as installed+launchable again was re-enabled outside
+  // CantosHub (e.g. its App info Enable button): stop calling it hidden.
+  const { forgetHidden } = store;
+  useEffect(() => {
+    if (loading || showAll) return;
+    const visible = new Set(games.map(g => g.packageName));
+    forgetHidden(store.hiddenGames.filter(h => visible.has(h.packageName)).map(h => h.packageName));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [games, loading, showAll]);
+
+  // Without Shizuku a hidden (disabled) game comes back through its App info Enable button.
+  const unhideOrExplain = async (g: GameInfo): Promise<boolean> => {
+    if (store.shizuku?.granted) return store.unhideGame(g.packageName);
+    Alert.alert(
+      `Show ${g.label} again`,
+      'It was hidden with Shizuku, which isn’t running. On the next screen tap Enable, then come back.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open', onPress: () => { CantosHub.openAppInfo(g.packageName); } },
+      ],
+    );
+    return false;
+  };
+
   const hiddenSet = new Set(store.hiddenGames.map(h => h.packageName));
   const hiddenAsGames: GameInfo[] = store.hiddenGames
     .filter(h => !games.some(g => g.packageName === h.packageName))
@@ -194,7 +218,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
               const hidden = hiddenSet.has(g.packageName);
               const played = fmtTime(g.totalTimeMs);
               const onPlay = async () => {
-                if (hidden) await store.unhideGame(g.packageName);
+                if (hidden && !(await unhideOrExplain(g))) return;
                 if (profile) await store.boostGame(profile);
                 await CantosHub.launchApp(g.packageName);
               };
@@ -247,6 +271,10 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
             const id = store.addProfile(assignFor.label);
             store.assignGameToProfile(id, assignFor.packageName);
           }
+          setAssignFor(null);
+        }}
+        onClear={() => {
+          if (assignFor) store.unassignGame(assignFor.packageName);
           setAssignFor(null);
         }}
       />
@@ -310,7 +338,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 onPress={async () => {
                   const g = moreFor;
                   setMoreFor(null);
-                  if (g) await store.unhideGame(g.packageName);
+                  if (g) await unhideOrExplain(g);
                 }}
               />
             ) : (
@@ -529,13 +557,17 @@ function ProfilePickerModal({
   onClose,
   onPick,
   onCreate,
+  onClear,
 }: {
   game: GameInfo | null;
   onClose: () => void;
   onPick: (profileId: string) => void;
   onCreate: () => void;
+  /** No profile: the game is played as-is, Auto mode leaves it alone. */
+  onClear: () => void;
 }) {
   const store = useStore();
+  const unbound = !store.profiles.some(p => p.packageName === game?.packageName);
   return (
     <Modal visible={!!game} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
@@ -547,6 +579,19 @@ function ProfilePickerModal({
             data={store.profiles}
             keyExtractor={p => p.id}
             style={styles.modalList}
+            ListHeaderComponent={
+              <Pressable style={styles.profRow} onPress={onClear}>
+                <View style={styles.noProfText}>
+                  <Text style={styles.profName}>No profile</Text>
+                  <Text style={styles.noProfSub}>Play it as-is — Auto mode leaves this game alone</Text>
+                </View>
+                {unbound ? (
+                  <Badge text="CURRENT" color={colors.accent} />
+                ) : (
+                  <Text style={styles.link}>Choose</Text>
+                )}
+              </Pressable>
+            }
             renderItem={({ item }) => {
               const bound = item.packageName === game?.packageName;
               return (
@@ -577,6 +622,8 @@ function ProfilePickerModal({
 }
 
 const styles = StyleSheet.create({
+  noProfText: { flex: 1, paddingRight: spacing.md },
+  noProfSub: { color: colors.textDim, fontSize: 12, marginTop: 2 },
   root: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

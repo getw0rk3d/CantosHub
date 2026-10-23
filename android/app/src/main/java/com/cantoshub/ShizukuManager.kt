@@ -4,7 +4,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import rikka.shizuku.Shizuku
 
 /**
@@ -95,18 +100,51 @@ object ShizukuManager {
     }
   }
 
-  /** Run a shell command (argv) and deliver the combined output (null on failure). */
-  fun exec(ctx: Context, command: List<String>, cb: (String?) -> Unit) {
+  /**
+   * Shell commands run HERE, one at a time and in order (a resolution change is size then
+   * density). They used to run on whichever thread asked - including the main thread when
+   * the user service connected - and a slow one (cache trim, app freeze, gfxinfo) froze the
+   * app: the ANR of 2026-10-21, "Input dispatching timed out" with the main thread inside
+   * IUserService.exec.
+   */
+  private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "cantoshub-shizuku").apply { isDaemon = true } }
+
+  private fun run(ctx: Context, command: List<String>, deliver: (Runnable) -> Unit, cb: (String?) -> Unit) {
     withService(ctx) { svc ->
       if (svc == null) {
-        cb(null)
+        deliver(Runnable { cb(null) })
         return@withService
       }
-      try {
-        cb(svc.exec(ArrayList(command)))
-      } catch (e: Exception) {
-        cb(null)
+      worker.execute {
+        val out = try {
+          svc.exec(ArrayList(command))
+        } catch (e: Exception) {
+          null
+        }
+        deliver(Runnable { cb(out) })
       }
     }
+  }
+
+  /**
+   * Run a shell command (argv) off the main thread and deliver the combined output (null on
+   * failure) back on the calling thread's looper (the main thread if it has none), so
+   * callers keep the threading they had.
+   */
+  fun exec(ctx: Context, command: List<String>, cb: (String?) -> Unit) {
+    val replyTo = Handler(Looper.myLooper() ?: Looper.getMainLooper())
+    run(ctx, command, { replyTo.post(it) }, cb)
+  }
+
+  /** Blocking variant for callers already off the main thread; null on failure or timeout. */
+  fun execBlocking(ctx: Context, command: List<String>, timeoutMs: Long): String? {
+    val latch = CountDownLatch(1)
+    var result: String? = null
+    run(ctx, command, { it.run() }) { out ->
+      result = out
+      latch.countDown()
+    }
+    latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+    return result
   }
 }

@@ -88,7 +88,9 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
   // Without Shizuku, the Home button is locked the official way: Android's own
   // "set as default Home app" prompt. Unlocking hands Home back to the normal launcher.
   const withHome = () => {
-    if (kids?.strongLock || kids?.homeRole) { doStart(); return; }
+    // Swipe navigation: never take over Home - Samsung switches its swipe gestures off while
+    // another app is Home, and a kid couldn't leave a game. Kids lock covers Home instead.
+    if (kids?.strongLock || kids?.homeRole || kids?.gestureNav) { doStart(); return; }
     Alert.alert(
       'Lock the Home button too?',
       'Android will ask you to make CantosHub your Home app — choose CantosHub and tap Set as default. Then Home always leads back to the kids screen.\n\nWhen you unlock Kids Mode, CantosHub opens Android’s Default home app list so you can switch back with one tap on One UI Home.',
@@ -237,7 +239,9 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
             : kids?.a11yLock
               ? '• Kids lock is on: the notification shade, Recents and other apps all lead straight back to the kids screen.'
               : '• For a stronger lock (no notification shade or Recents), turn on Kids lock above.'}
-          {kids?.strongLock ? '' : '\n• Home button: when you start Kids Mode, CantosHub asks Android to make the kids screen your Home app (you confirm it). After you unlock, CantosHub opens the Default home app list so you can switch back with one tap. No Shizuku needed.'}
+          {kids?.gestureNav
+            ? '\n• Home: swiping up to go Home brings your kid straight back to the kids screen.'
+            : kids?.strongLock ? '' : '\n• Home button: when you start Kids Mode, CantosHub asks Android to make the kids screen your Home app (you confirm it). After you unlock, CantosHub opens the Default home app list so you can switch back with one tap. No Shizuku needed.'}
           {'\n'}• Kids Mode stays on after a restart until you unlock it.
         </Text>
       </SectionCard>

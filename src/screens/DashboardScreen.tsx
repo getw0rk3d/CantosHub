@@ -1,6 +1,7 @@
 /** Main boost dashboard: master switch, quick toggles, live telemetry. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   AppState,
   DeviceEventEmitter,
   Pressable,
@@ -84,6 +85,13 @@ export default function DashboardScreen({
     if (mounted.current) setTelemetry(t);
   }, []);
 
+  // PRO changes still in place with no Shizuku to undo them (it died mid-boost: a restart,
+  // Wi-Fi off). CantosHub retries on its own once Shizuku is back; until then say so.
+  const [leftovers, setLeftovers] = useState<{ frozenApps: number; resolutionChanged: boolean } | null>(null);
+  useEffect(() => {
+    CantosHub.getProLeftovers().then(l => mounted.current && setLeftovers(l)).catch(() => {});
+  }, [boostRunning, store.shizuku?.granted]);
+
   useEffect(() => {
     mounted.current = true;
     store.refreshPermissions();
@@ -153,6 +161,36 @@ export default function DashboardScreen({
       setCleaning(null);
     }
   }, []);
+
+  // Blocked earlier with Shizuku, now locked: each blocked part has an Enable button in its
+  // App info page, so walk through those instead of leaving Samsung's booster stuck off.
+  const onBoosterLocked = useCallback(async () => {
+    if (!store.gameBooster?.blocked) { onGoPermissions(); return; }
+    const pkgs = await CantosHub.blockedBoosterPackages();
+    if (!pkgs.length) { store.refreshGameBooster(); return; }
+    const openNext = (i: number) => {
+      if (i >= pkgs.length) { store.refreshGameBooster(); return; }
+      Alert.alert(
+        `Turn Samsung's booster back on (${i + 1} of ${pkgs.length})`,
+        'Without Shizuku CantosHub can’t switch it back itself. On the next screen tap Enable, then come back here.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: 'Open',
+            onPress: async () => {
+              await CantosHub.openAppInfo(pkgs[i]);
+              const sub = AppState.addEventListener('change', s => {
+                if (s !== 'active') return;
+                sub.remove();
+                openNext(i + 1);
+              });
+            },
+          },
+        ],
+      );
+    };
+    openNext(0);
+  }, [store, onGoPermissions]);
 
   const onToggleBooster = useCallback(
     async (v: boolean) => {
@@ -343,6 +381,23 @@ export default function DashboardScreen({
         )}
       </SectionCard>
 
+      {/* PRO changes still in place that only Shizuku can undo */}
+      {!store.shizuku?.granted && !!leftovers && (leftovers.frozenApps > 0 || leftovers.resolutionChanged) && (
+        <SectionCard title="Still active from a boost">
+          <Text style={styles.freeDesc}>
+            {[
+              leftovers.frozenApps > 0 ? `${leftovers.frozenApps} app${leftovers.frozenApps === 1 ? ' is' : 's are'} still frozen` : null,
+              leftovers.resolutionChanged ? 'the screen resolution is still lowered' : null,
+            ].filter(Boolean).join(' and ')}
+            {' '}— Shizuku stopped before CantosHub could undo it (for example after a restart). Start
+            Shizuku again and CantosHub puts everything back by itself.
+          </Text>
+          <View style={styles.freeBtn}>
+            <PrimaryButton title="Open Access" variant="outline" onPress={onGoPermissions} />
+          </View>
+        </SectionCard>
+      )}
+
       {/* Free up memory */}
       <SectionCard title="Free up">
         <Text style={styles.freeDesc}>
@@ -395,8 +450,10 @@ export default function DashboardScreen({
             value={store.gameBooster.blocked}
             onValueChange={onToggleBooster}
             locked={!store.shizuku?.granted}
-            lockedHint="Needs Shizuku — set it up in Access"
-            onPressLocked={onGoPermissions}
+            lockedHint={store.gameBooster.blocked
+              ? 'Needs Shizuku to change. Tap to turn Samsung’s booster back on by hand'
+              : 'Needs Shizuku — set it up in Access'}
+            onPressLocked={onBoosterLocked}
             pro
           />
           {!!boosterMsg && <Text style={styles.freeMsg}>{boosterMsg}</Text>}

@@ -119,6 +119,9 @@ type NativeShape = {
   openAccessibilitySettings(): Promise<boolean>;
   kidsRequestHomeRole(): Promise<boolean>;
   openHomeChooser(): Promise<boolean>;
+  openAppInfo(packageName: string): Promise<boolean>;
+  blockedBoosterPackages(): Promise<string[]>;
+  getProLeftovers(): Promise<{ frozenApps: number; resolutionChanged: boolean }>;
   openLauncherHideApps(): Promise<'samsung' | 'home' | ''>;
   getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
@@ -164,6 +167,7 @@ export type KidsConfig = {
   restricted: 'allowed' | 'denied' | 'unknown'; // Android 13+ restricted settings for sideloaded apps
   homeRole: boolean; // CantosHub is the default Home app (Kids Mode Home without Shizuku)
   homeRoleTaken: boolean; // Kids Mode ended but still holds the borrowed Home: offer the picker
+  gestureNav: boolean; // phone uses swipe gestures: Kids Mode must not take over Home (Samsung disables gestures)
 };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
@@ -259,7 +263,7 @@ export const CantosHub = {
   // --- Kids Mode ---
   async kidsGetConfig(): Promise<KidsConfig> {
     if (!native) {
-      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown', homeRole: false, homeRoleTaken: false };
+      return { active: false, running: false, hasPin: false, allowed: [], deviceSecure: false, strongLock: false, a11yLock: false, restricted: 'unknown', homeRole: false, homeRoleTaken: false, gestureNav: false };
     }
     return native.kidsGetConfig();
   },
@@ -298,6 +302,24 @@ export const CantosHub = {
   async kidsRequestHomeRole(): Promise<boolean> {
     if (!native) return false;
     return native.kidsRequestHomeRole();
+  },
+
+  /** Any app's App info page (Enable a disabled app without Shizuku). */
+  async openAppInfo(packageName: string): Promise<boolean> {
+    if (!native) return false;
+    return native.openAppInfo(packageName);
+  },
+
+  /** Samsung Game Booster parts that are currently disabled. */
+  async blockedBoosterPackages(): Promise<string[]> {
+    if (!native) return [];
+    return native.blockedBoosterPackages();
+  },
+
+  /** PRO changes still in place (frozen apps / lowered resolution) that need Shizuku to undo. */
+  async getProLeftovers(): Promise<{ frozenApps: number; resolutionChanged: boolean }> {
+    if (!native) return { frozenApps: 0, resolutionChanged: false };
+    return native.getProLeftovers();
   },
 
   /** After Kids Mode: Android's "Select a Home app" so the parent picks their usual Home. */

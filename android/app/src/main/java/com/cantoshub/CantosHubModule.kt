@@ -230,6 +230,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       m.putBoolean("strongLock", ShizukuManager.hasPermission())
       m.putBoolean("a11yLock", KidsAccessibilityService.isEnabled(ctx))
       m.putBoolean("homeRole", isHomeRoleHeld())
+      m.putBoolean("gestureNav", KidsService.usesGestureNav(ctx))
       // Kids Mode borrowed Home and has ended: keep asking until a real default Home is saved.
       // Once a real default exists again, hand the Home button back for good.
       val owesHome = KidsPrefs.tookHome(ctx) && !KidsPrefs.isActive(ctx)
@@ -370,7 +371,8 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
    */
   @ReactMethod
   fun kidsRequestHomeRole(promise: Promise) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) { promise.resolve(false); return }
+    // Swipe navigation stops working while another app is Home on Samsung (usesGestureNav).
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || KidsService.usesGestureNav(ctx)) { promise.resolve(false); return }
     try {
       KidsService.setHomeAliasEnabled(ctx, true)
       val rm = ctx.getSystemService(Context.ROLE_SERVICE) as RoleManager
@@ -802,9 +804,9 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         ctx.externalCacheDir?.let { freed += deleteDirContents(it) }
         var systemTrim = false
         if (ShizukuManager.hasPermission()) {
-          val latch = java.util.concurrent.CountDownLatch(1)
-          ShizukuManager.exec(ctx, listOf("pm", "trim-caches", "9999999999999")) { latch.countDown() }
-          latch.await(8, java.util.concurrent.TimeUnit.SECONDS)
+          // Blocking on purpose: this already runs on its own thread (above), and waiting here
+          // keeps the reply off the main thread.
+          ShizukuManager.execBlocking(ctx, listOf("pm", "trim-caches", "9999999999999"), 8000)
           systemTrim = true
         }
         val m = Arguments.createMap()
@@ -873,6 +875,46 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     } catch (e: Exception) {
       promise.reject("GB_STATUS_ERR", e)
     }
+  }
+
+  /** Blocked Samsung parts that are still installed (for re-enabling by hand in App info). */
+  @ReactMethod
+  fun blockedBoosterPackages(promise: Promise) {
+    val arr = Arguments.createArray()
+    for ((p, _) in samsungBooster) {
+      val s = try { ctx.packageManager.getApplicationEnabledSetting(p) } catch (e: Exception) { continue }
+      if (s == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER || s == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+        arr.pushString(p)
+      }
+    }
+    promise.resolve(arr)
+  }
+
+  /**
+   * Any app's App info page. Without Shizuku this is how a disabled app comes back: Samsung's
+   * blocked Game Booster parts and hidden games both show an Enable button there.
+   */
+  @ReactMethod
+  fun openAppInfo(packageName: String, promise: Promise) {
+    try {
+      ctx.startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+      )
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.resolve(false)
+    }
+  }
+
+  /** PRO changes a boost made that are still in place (they need Shizuku to undo). */
+  @ReactMethod
+  fun getProLeftovers(promise: Promise) {
+    val (frozen, res) = ShizukuActions.pending(ctx)
+    val m = Arguments.createMap()
+    m.putInt("frozenApps", frozen)
+    m.putBoolean("resolutionChanged", res)
+    promise.resolve(m)
   }
 
   @ReactMethod

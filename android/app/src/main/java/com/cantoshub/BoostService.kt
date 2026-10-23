@@ -423,9 +423,15 @@ class BoostService : Service() {
   }
 
   /** Average rendered FPS via Shizuku `dumpsys gfxinfo` total-frame deltas. */
+  private var fpsSince = 0L            // when the sample in flight started (0 = none)
+
   private fun sampleFps() {
+    // A slow gfxinfo must not pile up a queue of samples; give up on one after 10 s.
+    if (fpsSince > 0L && System.currentTimeMillis() - fpsSince < 10_000) return
     val pkg = currentForegroundApp() ?: return
+    fpsSince = System.currentTimeMillis()
     ShizukuManager.exec(this, listOf("dumpsys", "gfxinfo", pkg)) { out ->
+      fpsSince = 0L
       val frames = parseTotalFrames(out)
       val now = System.currentTimeMillis()
       if (frames >= 0) {

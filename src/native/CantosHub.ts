@@ -120,6 +120,8 @@ type NativeShape = {
   kidsRequestHomeRole(): Promise<boolean>;
   openHomeChooser(): Promise<boolean>;
   openAppInfo(packageName: string): Promise<boolean>;
+  getScreenBrightness(): Promise<{ level: number; auto: boolean; canWrite: boolean }>;
+  setScreenBrightness(level: number, auto: boolean): Promise<boolean>;
   blockedBoosterPackages(): Promise<string[]>;
   getProLeftovers(): Promise<{ frozenApps: number; resolutionChanged: boolean }>;
   openLauncherHideApps(): Promise<'samsung' | 'home' | ''>;
@@ -302,6 +304,18 @@ export const CantosHub = {
   async kidsRequestHomeRole(): Promise<boolean> {
     if (!native) return false;
     return native.kidsRequestHomeRole();
+  },
+
+  /** Current screen brightness (0..255) and whether adaptive brightness is on. */
+  async getScreenBrightness(): Promise<{ level: number; auto: boolean; canWrite: boolean }> {
+    if (!native) return { level: 128, auto: false, canWrite: false };
+    return native.getScreenBrightness();
+  },
+
+  /** Set brightness: auto = adaptive; otherwise manual at level (1..255). */
+  async setScreenBrightness(level: number, auto = false): Promise<boolean> {
+    if (!native) return false;
+    return native.setScreenBrightness(Math.round(level), auto);
   },
 
   /** Any app's App info page (Enable a disabled app without Shizuku). */

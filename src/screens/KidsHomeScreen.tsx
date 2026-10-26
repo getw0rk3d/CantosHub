@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppIcon } from '../components/AppIcon';
+import { KidsBrightnessButton, KidsBrightnessRow } from '../components/KidsBrightness';
 import { Icon } from '../components/Icon';
 import { PinPad } from '../components/PinPad';
 import { CantosHub } from '../native/CantosHub';
@@ -20,6 +21,7 @@ export default function KidsHomeScreen() {
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [brightOpen, setBrightOpen] = useState(false);
 
   useEffect(() => {
     CantosHub.listInstalledApps()
@@ -68,16 +70,20 @@ export default function KidsHomeScreen() {
           <Text style={styles.hi}>Hi there! 👋</Text>
           <Text style={styles.pick}>Pick something to play</Text>
         </View>
-        <Pressable
-          onPress={() => {
-            setError(null);
-            setUnlocking(true);
-          }}
-          style={styles.lockBtn}
-          accessibilityLabel="Parent: exit Kids Mode">
-          <Icon name="lock" size={20} color="#C9C3FF" />
-        </Pressable>
+        <View style={styles.topBtns}>
+          <KidsBrightnessButton open={brightOpen} onToggle={() => setBrightOpen(o => !o)} />
+          <Pressable
+            onPress={() => {
+              setError(null);
+              setUnlocking(true);
+            }}
+            style={styles.lockBtn}
+            accessibilityLabel="Parent: exit Kids Mode">
+            <Icon name="lock" size={20} color="#C9C3FF" />
+          </Pressable>
+        </View>
       </View>
+      <KidsBrightnessRow visible={brightOpen} onClose={() => setBrightOpen(false)} />
 
       <ScrollView contentContainerStyle={styles.grid}>
         {apps.map((a, i) => (
@@ -122,6 +128,7 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 12 },
   hi: { color: '#FFFFFF', fontSize: 30, fontWeight: '900' },
   pick: { color: '#C9C3FF', fontSize: 16, marginTop: 4 },
+  topBtns: { flexDirection: 'row', alignItems: 'center' },
   lockBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 40 },
   tile: { width: '47%', borderRadius: 28, paddingVertical: 22, alignItems: 'center', marginBottom: 18 },

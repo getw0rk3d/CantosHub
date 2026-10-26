@@ -3,14 +3,14 @@
  * the shade held the only brightness slider, so the screen stayed too bright or too dim
  * while Kids Mode was on. A sun button opens five big steps (dim → bright) and Auto - easy
  * for small fingers, no slider to fiddle with. Needs "Modify system settings" (already
- * granted for boosting); hidden when it isn't.
+ * granted for boosting); if it isn't, the row says to ask a grown-up.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CantosHub } from '../native/CantosHub';
 
 const LEVELS = [15, 50, 100, 170, 255];
-const CLOSE_AFTER_MS = 4000;
+const CLOSE_AFTER_MS = 6000;   // time to decide, for small kids
 
 export function KidsBrightnessButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
@@ -62,7 +62,7 @@ export function KidsBrightnessRow({ visible, onClose }: { visible: boolean; onCl
     <View style={styles.row}>
       {LEVELS.map((l, i) => {
         const on = !state.auto && l === nearest;
-        const size = 22 + i * 7;
+        const size = 18 + i * 5;      // 18..38: grows left to right but stays inside its circle
         return (
           <Pressable
             key={l}
@@ -105,10 +105,10 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  step: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  step: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   stepOn: { backgroundColor: 'rgba(255,212,59,0.3)', borderWidth: 2, borderColor: '#FFD43B' },
   sun: { textAlign: 'center' },
-  auto: { paddingHorizontal: 14, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  auto: { paddingHorizontal: 14, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
   autoText: { color: '#C9C3FF', fontSize: 16, fontWeight: '800' },
   autoTextOn: { color: '#FFFFFF' },
   note: { color: '#C9C3FF', fontSize: 14, flex: 1, textAlign: 'center' },

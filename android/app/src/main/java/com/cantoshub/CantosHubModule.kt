@@ -877,6 +877,47 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /**
+   * Screen brightness for the kids screen. Kids lock closes the notification shade, which
+   * also hid the brightness slider, so the screen could stay too bright or too dim while
+   * Kids Mode was on. Uses "Modify system settings" (already granted for boosting).
+   * Resolves { level: 0..255, auto, canWrite }.
+   */
+  @ReactMethod
+  fun getScreenBrightness(promise: Promise) {
+    val cr = ctx.contentResolver
+    val m = Arguments.createMap()
+    m.putInt("level", try { Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS) } catch (e: Exception) { 128 })
+    m.putBoolean(
+      "auto",
+      try {
+        Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+      } catch (e: Exception) {
+        false
+      },
+    )
+    m.putBoolean("canWrite", Settings.System.canWrite(ctx))
+    promise.resolve(m)
+  }
+
+  /** [auto] true = adaptive brightness; otherwise manual at [level] (1..255). */
+  @ReactMethod
+  fun setScreenBrightness(level: Int, auto: Boolean, promise: Promise) {
+    if (!Settings.System.canWrite(ctx)) { promise.resolve(false); return }
+    try {
+      val cr = ctx.contentResolver
+      if (auto) {
+        Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
+      } else {
+        Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+        Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, level.coerceIn(1, 255))
+      }
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.resolve(false)
+    }
+  }
+
   /** Blocked Samsung parts that are still installed (for re-enabling by hand in App info). */
   @ReactMethod
   fun blockedBoosterPackages(promise: Promise) {

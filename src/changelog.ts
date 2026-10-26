@@ -4,6 +4,8 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.4':
+    '• Kids Mode: a ☀ button on the kids screen changes the brightness (five easy steps or Auto). Kids lock keeps the notification shade closed, so its brightness slider wasn’t reachable.',
   '1.3.3':
     '• Fixed: in Kids Mode on phones that use swipe gestures, swiping up could not leave a game. Kids Mode no longer takes over the Home app there (Samsung turns its gestures off when another app is Home), so a Home swipe goes straight back to the kids screen, and there’s nothing to switch back when you unlock.' +
     '\n• Fixed: CantosHub could freeze (“not responding”) while a Shizuku command was running. Those now run in the background.' +

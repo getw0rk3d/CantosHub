@@ -1,6 +1,6 @@
 {
-  "versionCode": 20,
-  "versionName": "1.3.3",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.3/CantosHub-1.3.3.apk",
-  "notes": "Fixes: swiping out of games in Kids Mode, a freeze while Shizuku commands ran, and saved settings that could be wiped. New: No profile option in the Games tab."
+  "versionCode": 21,
+  "versionName": "1.3.4",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.4/CantosHub-1.3.4.apk",
+  "notes": "NEW: brightness control on the Kids Mode screen (five easy steps or Auto)."
 }

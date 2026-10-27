@@ -10,9 +10,14 @@ import { Icon } from '../components/Icon';
 import { PinPad } from '../components/PinPad';
 import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
-import { offerHomeGiveBack } from './homeGiveBack';
+import { afterKidsUnlock } from './homeGiveBack';
 
 const KID_BG = '#1B1446';
+
+const fmtWait = (ms: number) => {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 const TILE_COLORS = ['#FF6B6B', '#4DABF7', '#51CF66', '#FFD43B', '#CC5DE8', '#FF922B'];
 
 export default function KidsHomeScreen() {
@@ -22,6 +27,20 @@ export default function KidsHomeScreen() {
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brightOpen, setBrightOpen] = useState(false);
+  // Too many wrong PINs: the pad waits (KidsPrefs.notePinFail) and counts down here.
+  const [waitUntil, setWaitUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const waitLeft = Math.max(0, waitUntil - now);
+
+  useEffect(() => {
+    if (waitUntil <= Date.now()) return;
+    const t = setInterval(() => {
+      const n = Date.now();
+      setNow(n);
+      if (n >= waitUntil) clearInterval(t);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [waitUntil]);
 
   useEffect(() => {
     CantosHub.listInstalledApps()
@@ -41,23 +60,29 @@ export default function KidsHomeScreen() {
     .sort((a, b) => a.label.localeCompare(b.label));
 
   const onPin = async (pin: string) => {
-    const ok = await CantosHub.kidsStop(pin);
+    const { ok, waitMs } = await CantosHub.kidsStop(pin);
     if (ok) {
       setUnlocking(false);
       setError(null);
       await store.refreshKids();
-      offerHomeGiveBack();
-    } else {
-      setError('Wrong PIN — try again');
+      afterKidsUnlock();
+      return;
     }
+    if (waitMs > 0) {
+      const n = Date.now();
+      setNow(n);
+      setWaitUntil(n + waitMs);
+    }
+    setError('Wrong PIN — try again');
   };
 
   const onDeviceUnlock = async () => {
     const ok = await CantosHub.kidsUnlockWithDeviceCredential();
     if (ok) {
       setUnlocking(false);
+      setWaitUntil(0);
       await store.refreshKids();
-      offerHomeGiveBack();
+      afterKidsUnlock();
     } else {
       setError("Couldn't confirm with the phone's lock");
     }
@@ -108,7 +133,8 @@ export default function KidsHomeScreen() {
         visible={unlocking}
         title="Grown-ups only"
         subtitle="Enter your Kids Mode PIN to unlock the phone"
-        error={error}
+        error={waitLeft > 0 ? `Too many tries — wait ${fmtWait(waitLeft)}` : error}
+        disabled={waitLeft > 0}
         onComplete={onPin}
         onCancel={() => setUnlocking(false)}
         footer={

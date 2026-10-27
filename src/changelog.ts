@@ -4,6 +4,16 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.5':
+    '• Security: other apps can no longer start a boost through CantosHub (they could freeze apps or change your resolution with CantosHub’s Shizuku access). Home-screen shortcuts and the Quick tile now always use your profiles as they are today.' +
+    '\n• Fixed: switching straight from one game to another in Auto could leave the second game’s frozen apps frozen for good. PRO changes from the previous game or profile are now undone before the next one starts.' +
+    '\n• Fixed: Play in the Games tab quietly turned Auto mode into a single-profile boost. Edits to the profile in use (quick toggles, resolution, frozen apps) now apply right away, in Auto and Manual.' +
+    '\n• Fixed: Do Not Disturb. A profile without DND no longer turns your own DND off, and a boost no longer leaves DND on after a Bedtime schedule.' +
+    '\n• Fixed: the overlay HUD blocked taps on the game under it.' +
+    '\n• Free RAM tells the truth: Android 14 and newer only let CantosHub close other apps with Shizuku (PRO), so it says so instead of “Cleared 47 apps”.' +
+    '\n• An update or a Shizuku restart now undoes whatever a boost left on, and Settings, Shizuku, Home, phone and keyboard apps can no longer be picked to freeze.' +
+    '\n• Kids Mode: a second wrong PIN no longer freezes the PIN pad. After several wrong tries the pad waits before the next one (the phone’s own lock still unlocks), and if Shizuku stopped during Kids Mode the app tells you how to get the top bar back.' +
+    '\n• Also: Uninstall game works, the update button shows its progress, ALL APPS opens faster, and the HUD hides FPS for games it can’t measure instead of showing 0.',
   '1.3.4':
     '• Kids Mode: a ☀ button on the kids screen changes the brightness (five easy steps or Auto). Kids lock keeps the notification shade closed, so its brightness slider wasn’t reachable.',
   '1.3.3':

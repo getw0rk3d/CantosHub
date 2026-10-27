@@ -107,22 +107,69 @@ object ShizukuManager {
    * app: the ANR of 2026-10-21, "Input dispatching timed out" with the main thread inside
    * IUserService.exec.
    */
-  private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "cantoshub-shizuku").apply { isDaemon = true } }
+  @Volatile private var workerThread: Thread? = null
+  private val worker = Executors.newSingleThreadExecutor { r ->
+    Thread(r, "cantoshub-shizuku").apply { isDaemon = true }.also { workerThread = it }
+  }
 
+  /**
+   * The user service, binding it first if needed (on the worker only: it waits for the bind,
+   * whose reply comes on the main thread). Null without Shizuku.
+   */
+  private fun awaitService(ctx: Context): IUserService? {
+    val latch = CountDownLatch(1)
+    var svc: IUserService? = null
+    withService(ctx) { s ->
+      svc = s
+      latch.countDown()
+    }
+    latch.await(10_000, TimeUnit.MILLISECONDS)
+    return svc
+  }
+
+  private fun execNow(ctx: Context, command: List<String>): String? {
+    val svc = awaitService(ctx) ?: return null
+    return try {
+      svc.exec(ArrayList(command))
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  // Everything queues on the worker as soon as it's asked for - waiting for the bind there, not
+  // before - so commands run in exactly the order they were requested.
   private fun run(ctx: Context, command: List<String>, deliver: (Runnable) -> Unit, cb: (String?) -> Unit) {
-    withService(ctx) { svc ->
-      if (svc == null) {
-        deliver(Runnable { cb(null) })
-        return@withService
+    worker.execute {
+      val out = execNow(ctx, command)
+      deliver(Runnable { cb(out) })
+    }
+  }
+
+  /** Runs commands inside a [submit] job, one after another; null on failure. */
+  class Shell internal constructor(private val svc: IUserService) {
+    fun exec(command: List<String>): String? = try {
+      svc.exec(ArrayList(command))
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  /**
+   * Run [job] as ONE task on the worker (shell is null without Shizuku), then hand its result
+   * to the caller's looper. Jobs never interleave and run in the order submitted, so a revert
+   * queued before an apply has finished - and saved its record - when the apply starts. With
+   * separate callbacks the two used to cross: on an Auto game-to-game switch the old game's
+   * revert wiped the new game's freeze record, leaving those apps frozen for good.
+   */
+  fun <T> submit(ctx: Context, job: (Shell?) -> T, cb: (T) -> Unit) {
+    val replyTo = Handler(Looper.myLooper() ?: Looper.getMainLooper())
+    worker.execute {
+      val result = try {
+        job(awaitService(ctx)?.let { Shell(it) })
+      } catch (e: Exception) {
+        return@execute
       }
-      worker.execute {
-        val out = try {
-          svc.exec(ArrayList(command))
-        } catch (e: Exception) {
-          null
-        }
-        deliver(Runnable { cb(out) })
-      }
+      replyTo.post { cb(result) }
     }
   }
 
@@ -138,6 +185,8 @@ object ShizukuManager {
 
   /** Blocking variant for callers already off the main thread; null on failure or timeout. */
   fun execBlocking(ctx: Context, command: List<String>, timeoutMs: Long): String? {
+    // On the worker itself (inside a job), queueing would wait on ourselves forever.
+    if (Thread.currentThread() === workerThread) return execNow(ctx, command)
     val latch = CountDownLatch(1)
     var result: String? = null
     run(ctx, command, { it.run() }) { out ->

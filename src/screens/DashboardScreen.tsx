@@ -4,6 +4,7 @@ import {
   Alert,
   AppState,
   DeviceEventEmitter,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -41,7 +42,23 @@ export default function DashboardScreen({
   onGoGames: () => void;
 }) {
   const store = useStore();
-  const { activeProfile, boostRunning, permissions, autoMode, showOverlay } = store;
+  const { activeProfile, boostRunning, boostState, permissions, autoMode, showOverlay } = store;
+  // While boosting, show what's really running: the manual boost's profile (Set active in
+  // Profiles doesn't switch it), or in Auto the profile of the game being boosted.
+  const runningProfile =
+    boostState?.running && !boostState.auto && boostState.profileId
+      ? store.profiles.find(p => p.id === boostState.profileId)
+      : undefined;
+  const autoGameProfile =
+    boostState?.running && boostState.auto && boostState.game
+      ? store.profiles.find(p => p.packageName === boostState.game)
+      : undefined;
+  const shownProfile = (boostRunning && runningProfile) || activeProfile;
+  // Quick toggles edit the profile that's in use. In Auto that's each game's own profile, so
+  // there's nothing to show until a game is being boosted.
+  const toggleProfile = autoMode ? autoGameProfile : shownProfile;
+  // Android 14+ only lets shell close other apps (killBackgroundProcesses does nothing there).
+  const freeRamNeedsPro = Platform.OS === 'android' && Number(Platform.Version) >= 34 && !store.shizuku?.granted;
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,12 +86,25 @@ export default function DashboardScreen({
 
   const onInstall = useCallback(async () => {
     setInstalling(true);
+    setDlProgress(0);
     try {
-      await store.installUpdate();
+      const r = await store.installUpdate();
+      // Sent to "Install unknown apps" first (or nothing to do): tap again after allowing it.
+      if (r !== 'INSTALLING' && r !== 'BUSY') setInstalling(false);
     } catch {
       setInstalling(false);
+      Alert.alert('Update failed', 'The download didn’t finish. Check your connection and tap the banner to try again.');
     }
   }, [store]);
+
+  // Back from the installer (cancelled) or the permission page: the banner is tappable again.
+  useEffect(() => {
+    if (!installing) return;
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active' && dlProgress >= 100) setInstalling(false);
+    });
+    return () => sub.remove();
+  }, [installing, dlProgress]);
 
   const loadTelemetry = useCallback(async () => {
     // Don't poll native telemetry while CantosHub is backgrounded (e.g. a game is
@@ -83,6 +113,11 @@ export default function DashboardScreen({
     if (AppState.currentState !== 'active') return;
     const t = await CantosHub.getTelemetry();
     if (mounted.current) setTelemetry(t);
+    // Also catch a Stop from the notification or Quick tile while CantosHub is open (pulling
+    // down the shade doesn't pause the app, so nothing else notices), and leftovers undone.
+    store.syncBoost();
+    CantosHub.getProLeftovers().then(l => mounted.current && setLeftovers(l)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // PRO changes still in place with no Shizuku to undo them (it died mid-boost: a restart,
@@ -132,9 +167,11 @@ export default function DashboardScreen({
       const freedMb = Math.round(r.freedBytes / 1048576);
       const freeGb = (r.availMem / 1073741824).toFixed(1);
       setCleanMsg(
-        freedMb > 0
-          ? `Cleared ${r.targeted} apps · freed ~${freedMb} MB · ${freeGb} GB free`
-          : `Cleared background in ${r.targeted} apps · ${freeGb} GB free`,
+        r.targeted < 0
+          ? `Android 14 and newer only let CantosHub close other apps through Shizuku (PRO). ${freeGb} GB free right now.`
+          : freedMb > 0
+          ? `Closed ${r.targeted} background apps · freed ~${freedMb} MB · ${freeGb} GB free`
+          : `Closed ${r.targeted} background apps · ${freeGb} GB free`,
       );
     } catch {
       setCleanMsg('Could not free RAM.');
@@ -301,8 +338,8 @@ export default function DashboardScreen({
             <Text style={styles.ringSub} numberOfLines={1}>
               {boostRunning
                 ? autoMode
-                  ? 'Watching for games'
-                  : activeProfile.name
+                  ? autoGameProfile?.name ?? 'Watching for games'
+                  : shownProfile.name
                 : autoMode
                 ? 'Applies per game'
                 : activeProfile.name}
@@ -382,19 +419,22 @@ export default function DashboardScreen({
       </SectionCard>
 
       {/* PRO changes still in place that only Shizuku can undo */}
-      {!store.shizuku?.granted && !!leftovers && (leftovers.frozenApps > 0 || leftovers.resolutionChanged) && (
+      {!boostRunning && !!leftovers && (leftovers.frozenApps > 0 || leftovers.resolutionChanged) && (
         <SectionCard title="Still active from a boost">
           <Text style={styles.freeDesc}>
             {[
               leftovers.frozenApps > 0 ? `${leftovers.frozenApps} app${leftovers.frozenApps === 1 ? ' is' : 's are'} still frozen` : null,
               leftovers.resolutionChanged ? 'the screen resolution is still lowered' : null,
             ].filter(Boolean).join(' and ')}
-            {' '}— Shizuku stopped before CantosHub could undo it (for example after a restart). Start
-            Shizuku again and CantosHub puts everything back by itself.
+            {store.shizuku?.granted
+              ? ' — Shizuku is back, putting it all back now…'
+              : ' — Shizuku stopped before CantosHub could undo it (for example after a restart). Start Shizuku again and CantosHub puts everything back by itself.'}
           </Text>
-          <View style={styles.freeBtn}>
-            <PrimaryButton title="Open Access" variant="outline" onPress={onGoPermissions} />
-          </View>
+          {!store.shizuku?.granted && (
+            <View style={styles.freeBtn}>
+              <PrimaryButton title="Open Access" variant="outline" onPress={onGoPermissions} />
+            </View>
+          )}
         </SectionCard>
       )}
 
@@ -421,9 +461,14 @@ export default function DashboardScreen({
         <View style={styles.freeDivider} />
         <ToggleRow
           label="Auto-free RAM on boost"
-          description="Kill background apps automatically when a game launches"
+          description={
+            freeRamNeedsPro
+              ? 'Close background apps when a game launches. On Android 14 and newer this needs Shizuku'
+              : 'Close background apps automatically when a game launches'
+          }
           value={store.freeRamOnBoost}
           onValueChange={store.setFreeRamOnBoost}
+          pro={freeRamNeedsPro}
         />
       </SectionCard>
 
@@ -462,27 +507,34 @@ export default function DashboardScreen({
 
       {/* Quick toggles */}
       <SectionCard
-        title="Quick toggles"
+        title={toggleProfile ? `Quick toggles · ${toggleProfile.name}` : 'Quick toggles'}
         right={
           <Pressable onPress={onGoPermissions}>
             <Text style={styles.link}>Permissions</Text>
           </Pressable>
         }>
-        {TOGGLES.filter(t => t.key !== 'peakRefreshRate' || store.capabilities?.peakRefreshRate !== false).map(t => {
-          const unlocked = isToggleUnlocked(t.key, permissions);
-          return (
-            <ToggleRow
-              key={t.key}
-              label={t.label}
-              description={t.desc}
-              value={activeProfile[t.key]}
-              onValueChange={v => store.toggle(t.key, v)}
-              locked={!unlocked}
-              lockedHint={!unlocked ? 'Tap to grant the required permission' : undefined}
-              onPressLocked={onGoPermissions}
-            />
-          );
-        })}
+        {!toggleProfile ? (
+          <Text style={styles.freeDesc}>
+            Auto mode: each game uses its own profile. While a game is being boosted, its
+            switches show here; edit the others in Profiles.
+          </Text>
+        ) : (
+          TOGGLES.filter(t => t.key !== 'peakRefreshRate' || store.capabilities?.peakRefreshRate !== false).map(t => {
+            const unlocked = isToggleUnlocked(t.key, permissions);
+            return (
+              <ToggleRow
+                key={t.key}
+                label={t.label}
+                description={t.desc}
+                value={toggleProfile[t.key]}
+                onValueChange={v => store.toggle(t.key, v, toggleProfile.id)}
+                locked={!unlocked}
+                lockedHint={!unlocked ? 'Tap to grant the required permission' : undefined}
+                onPressLocked={onGoPermissions}
+              />
+            );
+          })
+        )}
       </SectionCard>
 
       {store.capabilities?.peakRefreshRate === false && (

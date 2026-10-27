@@ -28,7 +28,14 @@ export type Telemetry = {
   availMem: number; // bytes
   lowMemory: boolean;
   thermalStatus: number; // -1 unknown, 0 none .. 6 shutdown
-  foregroundApp: string | null;
+};
+
+/** What the boost service is doing right now. */
+export type BoostState = {
+  running: boolean;
+  auto: boolean; // Auto mode (else one profile, Manual)
+  profileId: string | null; // Manual: the profile it was started with
+  game: string | null; // Auto: the game being boosted right now
 };
 
 export type BoostProfile = {
@@ -84,7 +91,7 @@ export type GameStat = {
 
 export type FreeRamResult = {
   freedBytes: number;
-  targeted: number;
+  targeted: number; // apps asked to close; -1 = this phone doesn't allow it (Android 14+ without Shizuku)
   availMem: number;
   totalMem: number;
 };
@@ -95,7 +102,7 @@ export type ClearCacheResult = {
 };
 
 /** Result of installUpdate: download started, or user sent to grant install perm. */
-export type InstallResult = 'INSTALLING' | 'NEEDS_PERMISSION';
+export type InstallResult = 'INSTALLING' | 'NEEDS_PERMISSION' | 'BUSY';
 
 type NativeShape = {
   getPermissionStatus(): Promise<PermissionStatus>;
@@ -109,12 +116,15 @@ type NativeShape = {
   ): Promise<boolean>;
   stopBoost(): Promise<boolean>;
   isBoostRunning(): Promise<boolean>;
+  getBoostState(): Promise<BoostState>;
   updateAutoProfiles(profilesJson: string): Promise<boolean>;
+  syncBoostSettings(profilesJson: string, activeId: string, auto: boolean, overlay: boolean, freeRam: boolean): Promise<boolean>;
+  freezeBlocked(): Promise<string[]>;
   kidsGetConfig(): Promise<KidsConfig>;
   kidsSetAllowed(json: string): Promise<boolean>;
   kidsSetPin(oldPin: string, newPin: string): Promise<boolean>;
   kidsStart(): Promise<KidsStartResult>;
-  kidsStop(pin: string): Promise<boolean>;
+  kidsStop(pin: string): Promise<KidsStopResult>;
   kidsUnlockWithDeviceCredential(): Promise<boolean>;
   openAccessibilitySettings(): Promise<boolean>;
   kidsRequestHomeRole(): Promise<boolean>;
@@ -170,7 +180,11 @@ export type KidsConfig = {
   homeRole: boolean; // CantosHub is the default Home app (Kids Mode Home without Shizuku)
   homeRoleTaken: boolean; // Kids Mode ended but still holds the borrowed Home: offer the picker
   gestureNav: boolean; // phone uses swipe gestures: Kids Mode must not take over Home (Samsung disables gestures)
+  barStuck?: boolean; // Kids Mode ended but the shade/Recents are still off (Shizuku stopped meanwhile)
 };
+
+/** ok: unlocked. waitMs > 0: too many wrong PINs, wait that long before the next try. */
+export type KidsStopResult = { ok: boolean; waitMs: number };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
 
@@ -214,7 +228,6 @@ const MOCK_TELEMETRY: Telemetry = {
   availMem: 3.2 * 1024 * 1024 * 1024,
   lowMemory: false,
   thermalStatus: 0,
-  foregroundApp: null,
 };
 
 export const CantosHub = {
@@ -262,6 +275,29 @@ export const CantosHub = {
     return native.isBoostRunning();
   },
 
+  async getBoostState(): Promise<BoostState> {
+    if (!native) return { running: false, auto: false, profileId: null, game: null };
+    return native.getBoostState();
+  },
+
+  /** Save the boost settings natively, for home-screen shortcuts and the Quick tile. */
+  async syncBoostSettings(s: {
+    profiles: BoostProfile[];
+    activeId: string;
+    auto: boolean;
+    overlay: boolean;
+    freeRam: boolean;
+  }): Promise<boolean> {
+    if (!native) return true;
+    return native.syncBoostSettings(JSON.stringify(s.profiles), s.activeId, s.auto, s.overlay, s.freeRam);
+  },
+
+  /** Apps that must never be frozen (Settings, Shizuku, Home, dialer, keyboard...). */
+  async freezeBlocked(): Promise<string[]> {
+    if (!native) return [];
+    return native.freezeBlocked();
+  },
+
   // --- Kids Mode ---
   async kidsGetConfig(): Promise<KidsConfig> {
     if (!native) {
@@ -285,8 +321,8 @@ export const CantosHub = {
     return native.kidsStart();
   },
 
-  async kidsStop(pin: string): Promise<boolean> {
-    if (!native) return true;
+  async kidsStop(pin: string): Promise<KidsStopResult> {
+    if (!native) return { ok: true, waitMs: 0 };
     return native.kidsStop(pin);
   },
 
@@ -348,7 +384,7 @@ export const CantosHub = {
     return native.openLauncherHideApps();
   },
 
-  /** Push edited profiles to a running Auto boost (no restart, no re-boost). */
+  /** Push edited profiles to a running boost, Auto or Manual (no restart, no re-boost). */
   async updateAutoProfiles(profiles: BoostProfile[]): Promise<boolean> {
     if (!native) return true;
     return native.updateAutoProfiles(JSON.stringify(profiles));

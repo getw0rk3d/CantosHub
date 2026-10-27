@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- "Uninstall game": the system uninstaller refuses apps without it (target 28+) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
@@ -127,6 +129,7 @@
           android:exported="true">
         <intent-filter>
           <action android:name="android.intent.action.BOOT_COMPLETED" />
+          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
         </intent-filter>
       </receiver>
 
@@ -152,7 +155,7 @@
       <!-- Invisible trampoline for home-screen / app-icon boost shortcuts -->
       <activity
           android:name=".BoostShortcutActivity"
-          android:exported="true"
+          android:exported="false"
           android:theme="@android:style/Theme.Translucent.NoTitleBar"
           android:excludeFromRecents="true"
           android:taskAffinity=""

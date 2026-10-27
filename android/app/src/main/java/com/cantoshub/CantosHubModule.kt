@@ -53,6 +53,10 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   private val shizukuPermListener =
     Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
       if (requestCode == SHIZUKU_REQ) {
+        if (grantResult == PackageManager.PERMISSION_GRANTED) {
+          KidsService.releaseBar(ctx)
+          BoostService.undoLeftovers(ctx)
+        }
         shizukuPromise?.resolve(grantResult == PackageManager.PERMISSION_GRANTED)
         shizukuPromise = null
       }
@@ -75,7 +79,10 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       if (requestCode != CRED_REQ) return
       KidsPrefs.allowSystemFor(ctx, 0)
       val ok = resultCode == Activity.RESULT_OK
-      if (ok) stopKidsNow()
+      if (ok) {
+        KidsPrefs.clearPinFails(ctx)
+        stopKidsNow()
+      }
       credPromise?.resolve(ok)
       credPromise = null
     }
@@ -171,10 +178,6 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
       val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else -1
       m.putInt("thermalStatus", thermal)
-
-      val fg = currentForegroundApp()
-      if (fg == null) m.putNull("foregroundApp") else m.putString("foregroundApp", fg)
-
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("TELEMETRY_ERR", e)
@@ -241,6 +244,9 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       }
       m.putBoolean("homeRoleTaken", owesHome && !handedBack)
       m.putString("restricted", restrictedSettingsState())
+      // Top bar still off from Kids lock: retry now, and tell the parent if Shizuku is gone.
+      KidsService.releaseBar(ctx)
+      m.putBoolean("barStuck", !KidsPrefs.isActive(ctx) && KidsPrefs.barLocked(ctx) && !ShizukuManager.hasPermission())
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("KIDS_CFG_ERR", e)
@@ -289,14 +295,22 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /**
+   * Resolves {ok, waitMs}. waitMs > 0: too many wrong PINs, the pad waits that long (a PIN
+   * typed meanwhile isn't checked or counted). The phone's own lock still works.
+   */
   @ReactMethod
   fun kidsStop(pin: String, promise: Promise) {
-    if (!KidsPrefs.checkPin(ctx, pin)) {
-      promise.resolve(false)
-      return
+    val m = Arguments.createMap()
+    val left = KidsPrefs.pinWaitLeftMs(ctx)
+    val ok = left == 0L && KidsPrefs.checkPin(ctx, pin)
+    if (ok) {
+      KidsPrefs.clearPinFails(ctx)
+      stopKidsNow()
     }
-    stopKidsNow()
-    promise.resolve(true)
+    m.putBoolean("ok", ok)
+    m.putDouble("waitMs", (if (ok) 0L else if (left > 0) left else KidsPrefs.notePinFail(ctx)).toDouble())
+    promise.resolve(m)
   }
 
   @ReactMethod
@@ -454,7 +468,40 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     KidsService.releaseSystemLock(ctx) // also covers a service that already died
   }
 
-  /** Push edited profiles to a running Auto boost without restarting it. */
+  /**
+   * The app's boost settings, saved natively so home-screen shortcuts and the Quick tile use
+   * today's profiles and the app's mode (see QuickPrefs).
+   */
+  @ReactMethod
+  fun syncBoostSettings(profilesJson: String, activeId: String, auto: Boolean, overlay: Boolean, freeRam: Boolean, promise: Promise) {
+    try {
+      QuickPrefs.saveSettings(ctx, profilesJson, activeId, auto, overlay, freeRam)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("BOOST_SYNC_ERR", e)
+    }
+  }
+
+  /** {running, auto, profileId (Manual), game (the game Auto is boosting)}. */
+  @ReactMethod
+  fun getBoostState(promise: Promise) {
+    val m = Arguments.createMap()
+    m.putBoolean("running", BoostService.isRunning)
+    m.putBoolean("auto", BoostService.isRunning && BoostService.isAuto)
+    BoostService.runningProfileId?.let { m.putString("profileId", it) } ?: m.putNull("profileId")
+    BoostService.boostedGame?.let { m.putString("game", it) } ?: m.putNull("game")
+    promise.resolve(m)
+  }
+
+  /** Apps the freeze picker must not offer (ShizukuActions.neverFreeze). */
+  @ReactMethod
+  fun freezeBlocked(promise: Promise) {
+    val arr = Arguments.createArray()
+    ShizukuActions.neverFreeze(ctx).forEach { arr.pushString(it) }
+    promise.resolve(arr)
+  }
+
+  /** Push edited profiles to a running boost (Auto or Manual) without restarting it. */
   @ReactMethod
   fun updateAutoProfiles(profilesJson: String, promise: Promise) {
     try {
@@ -1018,7 +1065,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun setQuickTileProfile(profileJson: String, promise: Promise) {
     try {
-      QuickPrefs.setFavorite(ctx, profileJson)
+      QuickPrefs.setFavorite(ctx, JSONObject(profileJson))
       promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("QUICK_ERR", e)
@@ -1081,10 +1128,15 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     val id = o.optString("id", "boost")
     val label = o.optString("label", "Boost")
     val pkg = o.optString("packageName", "")
-    val profile = o.optString("profile", "{}")
+    val profileId = try {
+      JSONObject(o.optString("profile", "{}")).optString("id", "")
+    } catch (e: Exception) {
+      ""
+    }
+    // Just the id: the profile is looked up when tapped, so later edits reach the shortcut.
     val intent = Intent(ctx, BoostShortcutActivity::class.java).apply {
       action = Intent.ACTION_VIEW
-      putExtra(BoostShortcutActivity.EXTRA_PROFILE, profile)
+      putExtra(BoostShortcutActivity.EXTRA_PROFILE_ID, profileId)
       putExtra(BoostShortcutActivity.EXTRA_LAUNCH_PKG, pkg)
     }
     return ShortcutInfoCompat.Builder(ctx, id)
@@ -1195,6 +1247,11 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         promise.resolve("NEEDS_PERMISSION")
         return
       }
+      // One download at a time: a second tap used to write into the same file under the first.
+      if (!updating.compareAndSet(false, true)) {
+        promise.resolve("BUSY")
+        return
+      }
       Thread {
         try {
           val file = downloadApk(url)
@@ -1202,6 +1259,8 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
           promise.resolve("INSTALLING")
         } catch (e: Exception) {
           promise.reject("UPDATE_DOWNLOAD_ERR", e)
+        } finally {
+          updating.set(false)
         }
       }.start()
     } catch (e: Exception) {
@@ -1209,8 +1268,13 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  private val updating = java.util.concurrent.atomic.AtomicBoolean(false)
+
+  /** Downloads into update.apk.part and renames it only when complete. */
   private fun downloadApk(url: String): java.io.File {
     val file = java.io.File(ctx.getExternalFilesDir(null), "update.apk")
+    val part = java.io.File(ctx.getExternalFilesDir(null), "update.apk.part")
+    part.delete()
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
     conn.instanceFollowRedirects = true
     conn.connectTimeout = 30000
@@ -1221,11 +1285,11 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       throw java.io.IOException("Update download failed (HTTP ${conn.responseCode})")
     }
     val total = conn.contentLength
+    var sum = 0L
     conn.inputStream.use { input ->
-      java.io.FileOutputStream(file).use { output ->
+      java.io.FileOutputStream(part).use { output ->
         val buf = ByteArray(8192)
         var read: Int
-        var sum = 0L
         var lastPct = -1
         while (input.read(buf).also { read = it } != -1) {
           output.write(buf, 0, read)
@@ -1241,6 +1305,12 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       }
     }
     conn.disconnect()
+    if (total > 0 && sum != total.toLong()) {
+      part.delete()
+      throw java.io.IOException("Update download was cut short")
+    }
+    file.delete()
+    if (!part.renameTo(file)) throw java.io.IOException("Couldn't save the update")
     return file
   }
 

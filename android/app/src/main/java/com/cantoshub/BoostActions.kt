@@ -29,6 +29,9 @@ object BoostActions {
   private const val TOUCHED_BRIGHTNESS = "touched_brightness"
   private const val TOUCHED_TIMEOUT = "touched_timeout"
   private const val TOUCHED_PEAK = "touched_peak"
+  // Snapshots from 1.3.5 on. Older ones without any touched flag predate touched-tracking
+  // and restore everything; a new snapshot whose profile touched nothing restores nothing.
+  private const val KEY_V2 = "snap_v2"
 
   private const val AWAKE_TIMEOUT_MS = 30 * 60 * 1000 // keep screen on up to 30 min
   private const val DEFAULT_TIMEOUT_MS = 60_000
@@ -56,19 +59,31 @@ object BoostActions {
     ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(key, true).apply()
   }
 
+  private fun unmarkTouched(ctx: Context, key: String) {
+    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(key).apply()
+  }
+
+  /** A boost changed settings that are not restored yet. */
+  fun hasSnapshot(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_HAS, false)
+
   fun revert(ctx: Context) {
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     if (!sp.getBoolean(KEY_HAS, false)) return
     val cr = ctx.contentResolver
 
     // Old snapshots (before touched-tracking) have no flags: treat everything as touched.
-    val legacy = listOf(TOUCHED_DND, TOUCHED_BRIGHTNESS, TOUCHED_TIMEOUT, TOUCHED_PEAK).none { sp.contains(it) }
+    val legacy = !sp.getBoolean(KEY_V2, false) &&
+      listOf(TOUCHED_DND, TOUCHED_BRIGHTNESS, TOUCHED_TIMEOUT, TOUCHED_PEAK).none { sp.contains(it) }
     fun touched(k: String) = legacy || sp.getBoolean(k, false)
 
     if (touched(TOUCHED_DND) && sp.contains(KEY_DND)) {
       try {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (nm.isNotificationPolicyAccessGranted) nm.setInterruptionFilter(sp.getInt(KEY_DND, NotificationManager.INTERRUPTION_FILTER_ALL))
+        // The boost only turns DND on when it was off, so "off" is what to go back to. Writing
+        // the saved filter back left DND on for good when a Bedtime schedule had it on at the
+        // start (the schedule ends, our copy doesn't).
+        val back = if (legacy) sp.getInt(KEY_DND, NotificationManager.INTERRUPTION_FILTER_ALL) else NotificationManager.INTERRUPTION_FILTER_ALL
+        if (nm.isNotificationPolicyAccessGranted) nm.setInterruptionFilter(back)
       } catch (_: Exception) {
       }
     }
@@ -94,18 +109,24 @@ object BoostActions {
     sp.edit().clear().apply()
   }
 
+  /**
+   * DND on only if it's off now (the user's own DND or a schedule is left alone), and off
+   * only if a boost turned it on - a profile without DND used to switch the user's DND off.
+   */
   fun setDnd(ctx: Context, enable: Boolean): Boolean {
     val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (!nm.isNotificationPolicyAccessGranted) return false
     ensureSnapshot(ctx)
-    if (enable) markTouched(ctx, TOUCHED_DND)
-    nm.setInterruptionFilter(
-      if (enable) {
-        NotificationManager.INTERRUPTION_FILTER_PRIORITY
-      } else {
-        NotificationManager.INTERRUPTION_FILTER_ALL
-      },
-    )
+    val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    if (enable) {
+      if (sp.getBoolean(TOUCHED_DND, false)) return true
+      if (nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL) return true
+      markTouched(ctx, TOUCHED_DND)
+      nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+    } else if (sp.getBoolean(TOUCHED_DND, false)) {
+      unmarkTouched(ctx, TOUCHED_DND)
+      nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+    }
     return true
   }
 
@@ -130,6 +151,7 @@ object BoostActions {
         sp.getInt(KEY_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC),
       )
       Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, sp.getInt(KEY_BRIGHTNESS, 128))
+      unmarkTouched(ctx, TOUCHED_BRIGHTNESS) // a level set after this is the user's own
     }
     return true
   }
@@ -140,6 +162,7 @@ object BoostActions {
     val cr = ctx.contentResolver
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     if (enable) markTouched(ctx, TOUCHED_TIMEOUT) else if (!sp.getBoolean(TOUCHED_TIMEOUT, false)) return true
+    if (!enable) unmarkTouched(ctx, TOUCHED_TIMEOUT)
     Settings.System.putInt(
       cr,
       Settings.System.SCREEN_OFF_TIMEOUT,
@@ -206,6 +229,7 @@ object BoostActions {
     try { e.putFloat(KEY_MIN, Settings.System.getFloat(cr, "min_refresh_rate")) } catch (_: Exception) {}
 
     e.putBoolean(KEY_HAS, true)
+    e.putBoolean(KEY_V2, true)
     e.apply()
   }
 }

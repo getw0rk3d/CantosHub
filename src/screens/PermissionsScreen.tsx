@@ -4,7 +4,7 @@
  * toggles in system Settings. Nothing here needs root.
  */
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, DeviceEventEmitter, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Badge, PrimaryButton, ProBadge, SectionCard, StatusDot } from '../components/ui';
 import { CantosHub, PermissionKey, VersionInfo } from '../native/CantosHub';
 import { useStore } from '../state/store';
@@ -52,10 +52,40 @@ export default function PermissionsScreen() {
   const { shizuku, update } = store;
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
+  // The update button: busy while downloading, with progress (it gave no feedback, and more
+  // taps started more downloads).
+  const [installing, setInstalling] = useState(false);
+  const [dlPct, setDlPct] = useState(0);
   const { refreshPermissions } = store;
   const startGuide = usePermissionGuide(refreshPermissions);
   const ready = permissions ? GUIDE_ORDER.filter(k => permissions[k]).length : 0;
   const total = GUIDE_ORDER.length;
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('CantosHubUpdateProgress', (pct: number) => setDlPct(pct));
+    return () => sub.remove();
+  }, []);
+
+  // Back from the installer or the "Install unknown apps" page: the button works again.
+  useEffect(() => {
+    if (!installing) return;
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active' && dlPct >= 100) setInstalling(false);
+    });
+    return () => sub.remove();
+  }, [installing, dlPct]);
+
+  const onInstall = async () => {
+    setInstalling(true);
+    setDlPct(0);
+    try {
+      const r = await store.installUpdate();
+      if (r !== 'INSTALLING' && r !== 'BUSY') setInstalling(false);
+    } catch {
+      setInstalling(false);
+      Alert.alert('Update failed', 'The download didn’t finish. Check your connection and try again.');
+    }
+  };
 
   useEffect(() => {
     store.refreshPermissions();
@@ -130,7 +160,7 @@ export default function PermissionsScreen() {
           ) : undefined
         }>
         <Text style={styles.note}>
-          <Text style={styles.bold}>You don’t need it.</Text> Boosting, Auto by game, Free RAM,
+          <Text style={styles.bold}>You don’t need it.</Text> Boosting, Auto by game,
           the overlay and Kids Mode all work with the permissions above. Android only lets a
           shell do a few things, so these are marked <ProBadge style={styles.proMid} /> and
           need <Text style={styles.bold}>Shizuku</Text> (still no root):
@@ -139,6 +169,9 @@ export default function PermissionsScreen() {
           'Lower resolution for more FPS',
           'Freeze background apps while gaming',
           'Clear every app’s cache at once',
+          ...(Platform.OS === 'android' && Number(Platform.Version) >= 34
+            ? ['Free RAM (Android 14 and newer only let a shell close other apps)']
+            : []),
           'Live FPS in the overlay',
           'Block Samsung Game Booster',
           'Hide games instantly (without it, CantosHub opens Samsung’s Hide apps page)',
@@ -179,8 +212,10 @@ export default function PermissionsScreen() {
               <Text style={[styles.note, { marginBottom: spacing.sm }]}>{update.notes}</Text>
             )}
             <PrimaryButton
-              title={`Install v${update.versionName}`}
-              onPress={() => store.installUpdate()}
+              title={installing ? `Downloading… ${dlPct}%` : `Install v${update.versionName}`}
+              onPress={onInstall}
+              busy={installing && dlPct === 0}
+              disabled={installing}
             />
           </View>
         ) : (

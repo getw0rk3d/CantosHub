@@ -1,6 +1,11 @@
 package com.cantoshub
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.Settings
+import android.provider.Telephony
+import android.telecom.TelecomManager
 import org.json.JSONObject
 
 /**
@@ -14,7 +19,10 @@ import org.json.JSONObject
  *
  * The restore record is only cleared once the restore commands actually ran; if
  * Shizuku isn't running (it doesn't survive a reboot) the record is kept and
- * [revert] is retried on the next app start / boost stop.
+ * [revert] is retried on the next app start / boost stop, or when Shizuku is back.
+ *
+ * [apply] and [revert] each run as one job on Shizuku's queue (ShizukuManager.submit), in the
+ * order they were called.
  */
 object ShizukuActions {
   private const val PREFS = "cantoshub_shizuku"
@@ -23,100 +31,128 @@ object ShizukuActions {
   private const val KEY_PREV_SIZE = "prev_size" // "1080x2340", or "" = no override before
   private const val KEY_PREV_DENSITY = "prev_density" // "450", or "" = no override before
 
-  fun apply(ctx: Context, profile: JSONObject, cb: (Boolean) -> Unit) {
-    val scale = profile.optDouble("resolutionScale", 1.0)
-    val freeze = jsonStrings(profile.optJSONArray("freezeApps"))
+  /**
+   * Packages a boost never freezes. With Settings or Shizuku frozen, Shizuku can't be started
+   * again (it needs Settings > Wireless debugging and its own app), so nothing frozen could be
+   * unfrozen on the phone; the rest would break calls, texts, typing, Home or the stores.
+   */
+  private val NEVER_FREEZE = setOf(
+    "moe.shizuku.privileged.api",
+    "com.android.settings",
+    "com.android.systemui",
+    "com.android.phone",
+    "com.android.vending",
+    "com.google.android.gms",
+    "com.sec.android.app.samsungapps",
+    "com.sec.android.app.launcher",
+    "com.google.android.apps.nexuslauncher",
+    "com.samsung.android.dialer",
+    "com.google.android.dialer",
+    "com.samsung.android.messaging",
+    "com.google.android.apps.messaging",
+    "com.samsung.android.honeyboard",
+    "com.google.android.inputmethod.latin",
+  )
 
-    // 1) Freeze (suspend) chosen background apps — never the game being boosted.
+  /** [NEVER_FREEZE] plus this phone's own Home, dialer, SMS app and keyboard, and CantosHub. */
+  fun neverFreeze(ctx: Context): Set<String> {
+    val out = HashSet(NEVER_FREEZE)
+    out.add(ctx.packageName)
+    try {
+      val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+      ctx.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName?.let { out.add(it) }
+    } catch (e: Exception) {
+    }
+    try {
+      (ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager).defaultDialerPackage?.let { out.add(it) }
+    } catch (e: Exception) {
+    }
+    try {
+      Telephony.Sms.getDefaultSmsPackage(ctx)?.let { out.add(it) }
+    } catch (e: Exception) {
+    }
+    try {
+      Settings.Secure.getString(ctx.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        ?.substringBefore('/')?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+    } catch (e: Exception) {
+    }
+    return out
+  }
+
+  fun apply(ctx: Context, profile: JSONObject, cb: (Boolean) -> Unit) =
+    ShizukuManager.submit(ctx, { sh -> sh != null && applyNow(ctx, sh, profile) }, cb)
+
+  fun revert(ctx: Context, cb: (Boolean) -> Unit) =
+    ShizukuManager.submit(ctx, { sh -> revertNow(ctx, sh) }, cb)
+
+  private fun applyNow(ctx: Context, sh: ShizukuManager.Shell, profile: JSONObject): Boolean {
+    val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val scale = profile.optDouble("resolutionScale", 1.0)
     val game = profile.optString("packageName", "")
-    val toFreeze = freeze.filter { it != game && it != ctx.packageName }
+
+    // The game itself can't be left frozen by another profile's record: let it run.
+    val held = suspendedList(ctx)
+    if (game.isNotEmpty() && game in held && sh.exec(listOf("pm", "unsuspend", game)) != null) {
+      saveSuspended(ctx, held - game)
+    }
+
+    // 1) Freeze (suspend) chosen background apps — never the game being boosted. Recorded
+    // first, so they're unfrozen even if we die right after.
+    val blocked = neverFreeze(ctx)
+    val toFreeze = jsonStrings(profile.optJSONArray("freezeApps")).filter { it != game && it !in blocked }
     if (toFreeze.isNotEmpty()) {
-      val already = suspendedList(ctx)
-      saveSuspended(ctx, (already + toFreeze).distinct())
-      ShizukuManager.exec(ctx, listOf("pm", "suspend") + toFreeze) { }
+      saveSuspended(ctx, (suspendedList(ctx) + toFreeze).distinct())
+      sh.exec(listOf("pm", "suspend") + toFreeze)
     }
 
     // 2) Resolution + density downscale, relative to what's on screen now.
-    if (scale !in 0.5..0.99) {
-      cb(true)
-      return
-    }
-    val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    if (sp.getBoolean(KEY_RES_CHANGED, false)) {
-      // Already downscaled by an earlier boost that wasn't reverted yet — don't stack.
-      cb(true)
-      return
-    }
-    ShizukuManager.exec(ctx, listOf("wm", "size")) { sizeOut ->
-      val physical = parseSize(sizeOut, "Physical size")
-      val override = parseSize(sizeOut, "Override size")
-      val (w, h) = override ?: physical ?: (0 to 0)
-      if (w <= 0 || h <= 0) {
-        cb(true)
-        return@exec
-      }
-      ShizukuManager.exec(ctx, listOf("wm", "density")) { densOut ->
-        val physD = parseDensity(densOut, "Physical density")
-        val overD = parseDensity(densOut, "Override density")
-        val d = overD ?: physD ?: 0
-        sp.edit()
-          .putBoolean(KEY_RES_CHANGED, true)
-          .putString(KEY_PREV_SIZE, override?.let { "${it.first}x${it.second}" } ?: "")
-          .putString(KEY_PREV_DENSITY, overD?.toString() ?: "")
-          .commit()
-        ShizukuManager.exec(ctx, listOf("wm", "size", "${(w * scale).toInt()}x${(h * scale).toInt()}")) {
-          if (d > 0) {
-            ShizukuManager.exec(ctx, listOf("wm", "density", "${(d * scale).toInt()}")) { cb(true) }
-          } else {
-            cb(true)
-          }
-        }
-      }
-    }
+    if (scale !in 0.5..0.99) return true
+    // Already downscaled by an earlier boost that wasn't reverted yet — don't stack.
+    if (sp.getBoolean(KEY_RES_CHANGED, false)) return true
+    val sizeOut = sh.exec(listOf("wm", "size"))
+    val override = parseSize(sizeOut, "Override size")
+    val (w, h) = override ?: parseSize(sizeOut, "Physical size") ?: return true
+    if (w <= 0 || h <= 0) return true
+    val densOut = sh.exec(listOf("wm", "density"))
+    val overD = parseDensity(densOut, "Override density")
+    val d = overD ?: parseDensity(densOut, "Physical density") ?: 0
+    sp.edit()
+      .putBoolean(KEY_RES_CHANGED, true)
+      .putString(KEY_PREV_SIZE, override?.let { "${it.first}x${it.second}" } ?: "")
+      .putString(KEY_PREV_DENSITY, overD?.toString() ?: "")
+      .commit()
+    sh.exec(listOf("wm", "size", "${(w * scale).toInt()}x${(h * scale).toInt()}"))
+    if (d > 0) sh.exec(listOf("wm", "density", "${(d * scale).toInt()}"))
+    return true
   }
 
-  fun revert(ctx: Context, cb: (Boolean) -> Unit) {
+  private fun revertNow(ctx: Context, sh: ShizukuManager.Shell?): Boolean {
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     val suspended = suspendedList(ctx)
     val resChanged = sp.getBoolean(KEY_RES_CHANGED, false)
-    if (suspended.isEmpty() && !resChanged) {
-      cb(true)
-      return
-    }
-    if (!ShizukuManager.hasPermission()) {
-      cb(false) // keep the record; retried later when Shizuku is back
-      return
-    }
-    val prevSize = sp.getString(KEY_PREV_SIZE, "") ?: ""
-    val prevDensity = sp.getString(KEY_PREV_DENSITY, "") ?: ""
+    if (suspended.isEmpty() && !resChanged) return true
+    if (sh == null) return false // keep the record; retried later when Shizuku is back
 
-    val unsuspend = { done: (Boolean) -> Unit ->
-      if (suspended.isNotEmpty()) {
-        ShizukuManager.exec(ctx, listOf("pm", "unsuspend") + suspended) { out -> done(out != null) }
+    var ok = true
+    if (resChanged) {
+      val prevSize = sp.getString(KEY_PREV_SIZE, "") ?: ""
+      val prevDensity = sp.getString(KEY_PREV_DENSITY, "") ?: ""
+      val a = sh.exec(if (prevSize.isNotEmpty()) listOf("wm", "size", prevSize) else listOf("wm", "size", "reset"))
+      val b = sh.exec(if (prevDensity.isNotEmpty()) listOf("wm", "density", prevDensity) else listOf("wm", "density", "reset"))
+      if (a != null && b != null) {
+        sp.edit().remove(KEY_RES_CHANGED).remove(KEY_PREV_SIZE).remove(KEY_PREV_DENSITY).commit()
       } else {
-        done(true)
+        ok = false
       }
     }
-    val restoreRes = { done: (Boolean) -> Unit ->
-      if (!resChanged) {
-        done(true)
+    if (suspended.isNotEmpty()) {
+      if (sh.exec(listOf("pm", "unsuspend") + suspended) != null) {
+        saveSuspended(ctx, suspendedList(ctx) - suspended.toSet()) // only what we just unfroze
       } else {
-        val sizeCmd = if (prevSize.isNotEmpty()) listOf("wm", "size", prevSize) else listOf("wm", "size", "reset")
-        val densCmd = if (prevDensity.isNotEmpty()) listOf("wm", "density", prevDensity) else listOf("wm", "density", "reset")
-        ShizukuManager.exec(ctx, sizeCmd) { a ->
-          ShizukuManager.exec(ctx, densCmd) { b -> done(a != null && b != null) }
-        }
+        ok = false
       }
     }
-    restoreRes { resOk ->
-      unsuspend { susOk ->
-        val e = sp.edit()
-        if (resOk) e.remove(KEY_RES_CHANGED).remove(KEY_PREV_SIZE).remove(KEY_PREV_DENSITY)
-        if (susOk) e.remove(KEY_SUSPENDED)
-        e.commit()
-        cb(resOk && susOk)
-      }
-    }
+    return ok
   }
 
   /** What a boost changed that still needs Shizuku to undo: (frozen app count, resolution lowered). */

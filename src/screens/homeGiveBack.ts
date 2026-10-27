@@ -9,6 +9,22 @@ import { CantosHub } from '../native/CantosHub';
 
 let asking = false;
 
+/**
+ * Right after Kids Mode is unlocked. If Shizuku stopped while Kids lock had the notification
+ * shade and Recents switched off, they stay off until Shizuku is back (the app then turns them
+ * on by itself) or the phone restarts - say so first, then hand Home back.
+ */
+export async function afterKidsUnlock(): Promise<void> {
+  const cfg = await CantosHub.kidsGetConfig().catch(() => null);
+  if (!cfg?.barStuck) return offerHomeGiveBack();
+  Alert.alert(
+    'Top bar is still off',
+    'Kids lock turned off the notification shade and Recents through Shizuku, and Shizuku has stopped since. Start Shizuku again (CantosHub turns them back on by itself) or restart the phone.',
+    [{ text: 'OK', onPress: () => { offerHomeGiveBack(); } }],
+    { cancelable: false },
+  );
+}
+
 export async function offerHomeGiveBack(again = false): Promise<void> {
   if (asking) return;
   const cfg = await CantosHub.kidsGetConfig().catch(() => null);

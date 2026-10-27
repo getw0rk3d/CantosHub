@@ -13,6 +13,7 @@ export function PinPad({
   onComplete,
   onCancel,
   footer,
+  disabled,
 }: {
   visible: boolean;
   title: string;
@@ -21,6 +22,8 @@ export function PinPad({
   onComplete: (pin: string) => void;
   onCancel: () => void;
   footer?: React.ReactNode;
+  /** Keys do nothing (e.g. waiting after too many wrong PINs). */
+  disabled?: boolean;
 }) {
   const [pin, setPin] = useState('');
 
@@ -35,10 +38,17 @@ export function PinPad({
       setPin(p => p.slice(0, -1));
       return;
     }
-    if (!k || pin.length >= 4) return;
+    if (!k || disabled || pin.length >= 4) return;
     const next = pin + k;
     setPin(next);
-    if (next.length === 4) setTimeout(() => onComplete(next), 120);
+    // Clear here too: a second wrong PIN shows the same error text, so the effect above
+    // doesn't run and the pad sat full, ignoring every key.
+    if (next.length === 4) {
+      setTimeout(() => {
+        setPin('');
+        onComplete(next);
+      }, 120);
+    }
   };
 
   return (
@@ -53,7 +63,7 @@ export function PinPad({
             ))}
           </View>
           <Text style={styles.error}>{error ?? ' '}</Text>
-          <View style={styles.grid}>
+          <View style={[styles.grid, disabled && styles.gridOff]}>
             {KEYS.map((k, i) => (
               <Pressable
                 key={i}
@@ -85,6 +95,7 @@ const styles = StyleSheet.create({
   dotOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   error: { color: colors.danger, fontSize: 13, marginTop: spacing.md, minHeight: 18 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', width: 252, marginTop: spacing.sm },
+  gridOff: { opacity: 0.35 },
   key: { width: 76, height: 64, margin: 4, borderRadius: 16, backgroundColor: colors.cardAlt, alignItems: 'center', justifyContent: 'center' },
   keyBlank: { backgroundColor: 'transparent' },
   keyPressed: { backgroundColor: colors.border },

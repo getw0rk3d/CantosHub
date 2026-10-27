@@ -118,7 +118,7 @@ class BoostService : Service() {
 
     /** No boost running but PRO changes still recorded (Shizuku was gone): undo them now. */
     fun undoLeftovers(ctx: Context) {
-      if (isRunning || !ShizukuManager.hasPermission()) return
+      if (isRunning || !ShizukuManager.canRun()) return
       val (frozen, res) = ShizukuActions.pending(ctx)
       if (frozen > 0 || res) applier.execute { ShizukuActions.revert(ctx) { } }
     }

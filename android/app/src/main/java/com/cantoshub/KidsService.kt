@@ -101,7 +101,7 @@ class KidsService : Service() {
       // without "Always" saves nothing). The app opens Default home app instead and switches
       // the kids Home off once a new default exists (CantosHubModule.kidsGetConfig).
       if (!(KidsPrefs.tookHome(ctx) && homeRoleHeld(ctx))) setHomeAliasEnabled(ctx, false)
-      if (ShizukuManager.hasPermission()) {
+      if (ShizukuManager.canRun()) {
         releaseBar(ctx, force = true)   // force: a lock applied by 1.3.4 or older left no flag
         val prev = KidsPrefs.prevHome(ctx)
         if (prev.isNotEmpty()) {
@@ -118,7 +118,7 @@ class KidsService : Service() {
      * (MainApplication), when it's granted, and whenever the app reads the Kids settings.
      */
     fun releaseBar(ctx: Context, force: Boolean = false) {
-      if (!(force || KidsPrefs.barLocked(ctx)) || KidsPrefs.isActive(ctx) || !ShizukuManager.hasPermission()) return
+      if (!(force || KidsPrefs.barLocked(ctx)) || KidsPrefs.isActive(ctx) || !ShizukuManager.canRun()) return
       ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { out ->
         if (out != null && !out.startsWith("ERR") && !KidsPrefs.isActive(ctx)) KidsPrefs.setBarLocked(ctx, false)
       }

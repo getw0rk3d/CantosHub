@@ -59,12 +59,32 @@ object ShizukuManager {
     false
   }
 
+  /**
+   * Shell commands can run: Shizuku is granted, or our own shell service is still alive (it
+   * outlives a stopped Shizuku server). For undoing things - a Kids top bar or frozen apps
+   * shouldn't stay stuck just because the Shizuku server went away first.
+   */
+  fun canRun(): Boolean = hasPermission() || try {
+    synchronized(lock) { service }?.asBinder()?.pingBinder() == true
+  } catch (e: Exception) {
+    false
+  }
+
+  private fun appVersion(ctx: Context): Int = try {
+    @Suppress("DEPRECATION")
+    ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
+  } catch (e: Exception) {
+    1
+  }
+
   private fun userServiceArgs(ctx: Context): Shizuku.UserServiceArgs =
     Shizuku.UserServiceArgs(ComponentName(ctx.packageName, UserService::class.java.name))
       .daemon(true)
       .processNameSuffix("shizuku")
       .debuggable(false)
-      .version(1)
+      // Per app version: after an update Shizuku replaces the running service (a daemon, it
+      // outlives the app) instead of reusing the old one with the old code.
+      .version(appVersion(ctx))
 
   private fun withService(ctx: Context, cb: (IUserService?) -> Unit) {
     val current = synchronized(lock) { service }

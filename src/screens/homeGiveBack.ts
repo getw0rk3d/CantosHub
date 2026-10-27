@@ -10,11 +10,44 @@ import { CantosHub } from '../native/CantosHub';
 let asking = false;
 
 /**
+ * Resolves after CantosHub has stayed in front for a moment - or, if it left (the Wallet
+ * hop), once it's back. Never waits more than 5 s.
+ */
+function backInFront(): Promise<void> {
+  return new Promise(resolve => {
+    let away = AppState.currentState !== 'active';
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      sub.remove();
+      if (quiet) clearTimeout(quiet);
+      clearTimeout(cap);
+      resolve();
+    };
+    const sub = AppState.addEventListener('change', s => {
+      if (s !== 'active') {
+        away = true;
+        if (quiet) clearTimeout(quiet);
+      } else if (away) {
+        away = false;
+        quiet = setTimeout(finish, 400);
+      }
+    });
+    quiet = setTimeout(() => {
+      if (!away) finish();
+    }, 800);
+    const cap = setTimeout(finish, 5000);
+  });
+}
+
+/**
  * Right after Kids Mode is unlocked. If Shizuku stopped while Kids lock had the notification
  * shade and Recents switched off, they stay off until Shizuku is back (the app then turns them
  * on by itself) or the phone restarts - say so first, then hand Home back.
  */
 export async function afterKidsUnlock(): Promise<void> {
+  // Unlocking can open Samsung Wallet for a moment (to bring its swipe-up back); an alert
+  // shown then was lost when CantosHub came back. Ask once we're in front again.
+  await backInFront();
   const cfg = await CantosHub.kidsGetConfig().catch(() => null);
   if (!cfg?.barStuck) return offerHomeGiveBack();
   Alert.alert(

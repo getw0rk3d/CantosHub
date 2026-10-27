@@ -246,7 +246,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       m.putString("restricted", restrictedSettingsState())
       // Top bar still off from Kids lock: retry now, and tell the parent if Shizuku is gone.
       KidsService.releaseBar(ctx)
-      m.putBoolean("barStuck", !KidsPrefs.isActive(ctx) && KidsPrefs.barLocked(ctx) && !ShizukuManager.hasPermission())
+      m.putBoolean("barStuck", !KidsPrefs.isActive(ctx) && KidsPrefs.barLocked(ctx) && !ShizukuManager.canRun())
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("KIDS_CFG_ERR", e)

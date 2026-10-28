@@ -166,17 +166,29 @@ object AdbShell {
    * Blocking: run [command] as shell. Output (stdout + stderr) like the Shizuku service,
    * with "ERR: " in front when it exits non-zero; null when there's no connection.
    */
-  fun exec(ctx: Context, command: List<String>): String? {
+  fun exec(ctx: Context, command: List<String>, timeoutMs: Long = EXEC_TIMEOUT_MS): String? {
     if (!isConnected()) return null
     val line = command.joinToString(" ") { quote(it) } + "; echo \"$EXIT_MARK\$?\""
     return try {
-      val text = manager(ctx).openStream("shell:$line").use { stream ->
-        val buf = ByteArrayOutputStream()
-        stream.openInputStream().use { it.copyTo(buf) }
-        buf.toString("UTF-8")
+      val stream = manager(ctx).openStream("shell:$line")
+      // A command that never ends must not hold up every command queued after it.
+      val watchdog = timer.schedule({
+        try {
+          stream.close()
+        } catch (e: Exception) {
+        }
+      }, timeoutMs, TimeUnit.MILLISECONDS)
+      val text = try {
+        readUntilExit(stream)
+      } finally {
+        watchdog.cancel(false)
+        try {
+          stream.close()
+        } catch (e: Exception) {
+        }
       }
       val at = text.lastIndexOf(EXIT_MARK)
-      if (at < 0) return text.trim()
+      if (at < 0) return null // cut off (timed out or the connection dropped)
       val code = text.substring(at + EXIT_MARK.length).trim().toIntOrNull() ?: 0
       val out = text.substring(0, at).trim()
       if (code != 0) "ERR: $out" else out
@@ -185,6 +197,35 @@ object AdbShell {
       if (!isConnected()) onChange?.invoke()
       null
     }
+  }
+
+  /**
+   * Reads until the exit-code line. Not until end of stream: libadb's read() waits forever
+   * after the last chunk when the stream's close arrived together with that chunk (it parks
+   * the close as "pending" and never re-checks it), which hung the first command and, behind
+   * it, every later one.
+   */
+  private fun readUntilExit(stream: io.github.muntashirakon.adb.AdbStream): String {
+    val out = ByteArrayOutputStream()
+    val buf = ByteArray(8192)
+    while (true) {
+      val n = try {
+        stream.read(buf, 0, buf.size)
+      } catch (e: Exception) {
+        -1
+      }
+      if (n < 0) break
+      out.write(buf, 0, n)
+      val s = out.toString("UTF-8")
+      val at = s.lastIndexOf(EXIT_MARK)
+      if (at >= 0 && s.indexOf('\n', at) > 0) break
+    }
+    return out.toString("UTF-8")
+  }
+
+  private const val EXEC_TIMEOUT_MS = 60_000L
+  private val timer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+    Thread(r, "cantoshub-adb-watchdog").apply { isDaemon = true }
   }
 
   private fun quote(s: String) = "'" + s.replace("'", "'\\''") + "'"

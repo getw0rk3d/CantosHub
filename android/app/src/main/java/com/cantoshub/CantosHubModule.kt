@@ -923,8 +923,8 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         if (ShizukuManager.hasPermission()) {
           // Blocking on purpose: this already runs on its own thread (above), and waiting here
           // keeps the reply off the main thread.
-          ShizukuManager.execBlocking(ctx, listOf("pm", "trim-caches", "9999999999999"), 8000)
-          systemTrim = true
+          val out = ShizukuManager.execBlocking(ctx, listOf("pm", "trim-caches", "9999999999999"), 8000)
+          systemTrim = out != null && !out.startsWith("ERR")
         }
         val m = Arguments.createMap()
         m.putDouble("ownFreedBytes", freed.toDouble())

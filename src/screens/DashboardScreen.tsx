@@ -189,8 +189,8 @@ export default function DashboardScreen({
       const own = (r.ownFreedBytes / 1048576).toFixed(1);
       setCleanMsg(
         r.systemTrim
-          ? `System-wide cache trimmed (Shizuku) · app cache ${own} MB`
-          : `App cache cleared (${own} MB). Clearing every app’s cache at once is PRO (needs Shizuku).`,
+          ? `System-wide cache trimmed (PRO) · app cache ${own} MB`
+          : `App cache cleared (${own} MB). Clearing every app’s cache at once is PRO.`,
       );
     } catch {
       setCleanMsg('Could not clear cache.');

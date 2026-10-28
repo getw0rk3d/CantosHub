@@ -15,7 +15,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import { CHANGELOG } from '../changelog';
 import {
   BoostProfile,
@@ -232,6 +232,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setShizuku({ available: false, granted: false });
     }
   }, []);
+
+  // The built-in connection came or went (paired, reconnected after a restart, Wi-Fi lost).
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('CantosHubShellChanged', () => {
+      refreshShizuku();
+    });
+    return () => sub.remove();
+  }, [refreshShizuku]);
 
   const requestShizuku = useCallback(async () => {
     try {

@@ -217,6 +217,11 @@ class KidsService : Service() {
     return START_STICKY
   }
 
+  /** A shell became available while Kids Mode is on (e.g. reconnected after a restart). */
+  fun reapplyLock() {
+    if (isRunning && KidsPrefs.isActive(this)) handler?.post { applySystemLock() }
+  }
+
   private fun applySystemLock() {
     if (!ShizukuManager.hasPermission()) return
     // Remember the current Home once, then make CantosHub's kids screen the Home app -

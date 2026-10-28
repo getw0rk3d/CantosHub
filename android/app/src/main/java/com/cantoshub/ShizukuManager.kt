@@ -47,16 +47,33 @@ object ShizukuManager {
     }
   }
 
-  fun isAvailable(): Boolean = try {
+  /** The Shizuku app's server is running. */
+  fun shizukuRunning(): Boolean = try {
     Shizuku.pingBinder()
   } catch (e: Exception) {
     false
   }
 
-  fun hasPermission(): Boolean = try {
-    isAvailable() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+  /** Shizuku is running and CantosHub is allowed in it. */
+  fun shizukuGranted(): Boolean = try {
+    shizukuRunning() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
   } catch (e: Exception) {
     false
+  }
+
+  fun isAvailable(): Boolean = shizukuRunning() || AdbShell.isConnected()
+
+  /**
+   * A shell is ready for PRO features: Shizuku (granted) or CantosHub's own Wireless
+   * debugging connection (AdbShell). Shizuku wins when both are there.
+   */
+  fun hasPermission(): Boolean = shizukuGranted() || AdbShell.isConnected()
+
+  /** Which one runs the commands: "shizuku", "builtin" or null. */
+  fun via(): String? = when {
+    shizukuGranted() -> "shizuku"
+    AdbShell.isConnected() -> "builtin"
+    else -> null
   }
 
   /**
@@ -92,7 +109,7 @@ object ShizukuManager {
       cb(current)
       return
     }
-    if (!hasPermission()) {
+    if (!shizukuGranted()) {
       cb(null)
       return
     }
@@ -147,14 +164,34 @@ object ShizukuManager {
     return svc
   }
 
-  private fun execNow(ctx: Context, command: List<String>): String? {
-    val svc = awaitService(ctx) ?: return null
-    return try {
-      svc.exec(ArrayList(command))
+  /**
+   * Where commands go: the Shizuku service (granted, or our own service still alive after the
+   * Shizuku server stopped), else the built-in connection - connecting it first if it's paired
+   * (AdbShell rate-limits the tries). Null when neither is there. Worker only (it blocks).
+   */
+  private fun awaitShell(ctx: Context): ((List<String>) -> String?)? {
+    val cached = synchronized(lock) { service }
+    val cachedAlive = try {
+      cached?.asBinder()?.pingBinder() == true
     } catch (e: Exception) {
-      null
+      false
     }
+    if (shizukuGranted() || cachedAlive) {
+      awaitService(ctx)?.let { svc ->
+        return { cmd ->
+          try {
+            svc.exec(ArrayList(cmd))
+          } catch (e: Exception) {
+            null
+          }
+        }
+      }
+    }
+    if (AdbShell.connect(ctx)) return { cmd -> AdbShell.exec(ctx, cmd) }
+    return null
   }
+
+  private fun execNow(ctx: Context, command: List<String>): String? = awaitShell(ctx)?.invoke(command)
 
   // Everything queues on the worker as soon as it's asked for - waiting for the bind there, not
   // before - so commands run in exactly the order they were requested.
@@ -166,12 +203,8 @@ object ShizukuManager {
   }
 
   /** Runs commands inside a [submit] job, one after another; null on failure. */
-  class Shell internal constructor(private val svc: IUserService) {
-    fun exec(command: List<String>): String? = try {
-      svc.exec(ArrayList(command))
-    } catch (e: Exception) {
-      null
-    }
+  class Shell internal constructor(private val run: (List<String>) -> String?) {
+    fun exec(command: List<String>): String? = run(command)
   }
 
   /**
@@ -185,7 +218,7 @@ object ShizukuManager {
     val replyTo = Handler(Looper.myLooper() ?: Looper.getMainLooper())
     worker.execute {
       val result = try {
-        job(awaitService(ctx)?.let { Shell(it) })
+        job(awaitShell(ctx)?.let { Shell(it) })
       } catch (e: Exception) {
         return@execute
       }

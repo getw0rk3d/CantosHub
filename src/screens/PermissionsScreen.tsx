@@ -150,12 +150,12 @@ export default function PermissionsScreen() {
       </SectionCard>
 
       <SectionCard
-        title="Extras · Shizuku (optional)"
+        title="Extras · PRO access (optional)"
         right={
           shizuku ? (
             <Badge
-              text={shizuku.granted ? 'AUTHORIZED' : shizuku.available ? 'NOT AUTHORIZED' : 'NOT RUNNING'}
-              color={shizuku.granted ? colors.accent : shizuku.available ? colors.warn : colors.textDim}
+              text={shizuku.granted ? 'ON' : shizuku.builtIn?.paired || shizuku.available ? 'NOT CONNECTED' : 'OFF'}
+              color={shizuku.granted ? colors.accent : shizuku.builtIn?.paired || shizuku.available ? colors.warn : colors.textDim}
             />
           ) : undefined
         }>
@@ -163,7 +163,8 @@ export default function PermissionsScreen() {
           <Text style={styles.bold}>You don’t need it.</Text> Boosting, Auto by game,
           the overlay and Kids Mode all work with the permissions above. Android only lets a
           shell do a few things, so these are marked <ProBadge style={styles.proMid} /> and
-          need <Text style={styles.bold}>Shizuku</Text> (still no root):
+          need <Text style={styles.bold}>PRO access</Text> — CantosHub pairs with your phone’s
+          Wireless debugging once (no root, no extra app), or uses Shizuku if you have it:
         </Text>
         {[
           'Lower resolution for more FPS',
@@ -179,16 +180,25 @@ export default function PermissionsScreen() {
           <Text key={t} style={styles.step}>•  {t}</Text>
         ))}
         <Text style={[styles.note, { marginTop: spacing.sm }]}>
-          Shizuku needs Wi-Fi to start and stops when the phone restarts.
+          Wireless debugging needs Wi-Fi. After a restart CantosHub turns it back on and
+          reconnects by itself whenever you’re on Wi-Fi.
         </Text>
 
         {shizuku?.granted ? (
-          <Text style={[styles.note, styles.grantedNote]}>
-            ✓ Connected — Pro options are unlocked in Profiles.
-          </Text>
+          <>
+            <Text style={[styles.note, styles.grantedNote]}>
+              ✓ Connected{shizuku.via === 'shizuku' ? ' (Shizuku)' : ''} — PRO options are unlocked in Profiles.
+            </Text>
+            <View style={styles.setupBtn}>
+              <PrimaryButton title="PRO access settings" variant="outline" onPress={() => setSetupOpen(true)} />
+            </View>
+          </>
         ) : (
           <View style={styles.setupBtn}>
-            <PrimaryButton title="Set up Shizuku" onPress={() => setSetupOpen(true)} />
+            <PrimaryButton
+              title={shizuku?.builtIn?.paired ? 'Reconnect PRO access' : 'Set up PRO access'}
+              onPress={() => setSetupOpen(true)}
+            />
           </View>
         )}
       </SectionCard>

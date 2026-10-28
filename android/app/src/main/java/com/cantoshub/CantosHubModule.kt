@@ -90,6 +90,15 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   init {
     ctx.addActivityEventListener(activityListener)
+    // The built-in connection came or went: the app re-reads its PRO status.
+    AdbShell.onChange = {
+      try {
+        ctx.getJSModule(
+          com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java,
+        ).emit("CantosHubShellChanged", null)
+      } catch (e: Exception) {
+      }
+    }
     try {
       Shizuku.addRequestPermissionResultListener(shizukuPermListener)
     } catch (e: Exception) {
@@ -493,6 +502,55 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     promise.resolve(m)
   }
 
+  /**
+   * Built-in PRO access: start pairing (the notification with the code box) and open
+   * Developer options at Wireless debugging.
+   */
+  @ReactMethod
+  fun startBuiltInPairing(promise: Promise) {
+    try {
+      AdbPairingService.start(ctx)
+      openWirelessDebugging()
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("PAIR_ERR", e)
+    }
+  }
+
+  @ReactMethod
+  fun stopBuiltInPairing(promise: Promise) {
+    try {
+      AdbPairingService.stop(ctx)
+    } catch (e: Exception) {
+    }
+    promise.resolve(true)
+  }
+
+  /** Paired before: connect again now (switching Wireless debugging on if CantosHub may). */
+  @ReactMethod
+  fun reconnectBuiltIn(promise: Promise) {
+    Thread {
+      val ok = AdbShell.connect(ctx, force = true)
+      if (ok) MainApplication.onShellReady(ctx)
+      promise.resolve(ok)
+    }.start()
+  }
+
+  /** Developer options, scrolled to Wireless debugging where the phone supports it. */
+  private fun openWirelessDebugging() {
+    val key = "toggle_adb_wireless"
+    val args = android.os.Bundle().apply { putString(":settings:fragment_args_key", key) }
+    val i = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+      .putExtra(":settings:fragment_args_key", key)
+      .putExtra(":settings:show_fragment_args", args)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+      ctx.startActivity(i)
+    } catch (e: Exception) {
+      ctx.startActivity(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+  }
+
   /** Apps the freeze picker must not offer (ShizukuActions.neverFreeze). */
   @ReactMethod
   fun freezeBlocked(promise: Promise) {
@@ -603,10 +661,22 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun getShizukuStatus(promise: Promise) {
     try {
-      val available = ShizukuManager.isAvailable()
       val m = Arguments.createMap()
-      m.putBoolean("available", available)
-      m.putBoolean("granted", available && ShizukuManager.hasPermission())
+      // available/granted: a shell is there for PRO features, from Shizuku or built-in.
+      m.putBoolean("available", ShizukuManager.isAvailable())
+      m.putBoolean("granted", ShizukuManager.hasPermission())
+      m.putBoolean("shizukuRunning", ShizukuManager.shizukuRunning())
+      m.putBoolean("shizukuGranted", ShizukuManager.shizukuGranted())
+      ShizukuManager.via()?.let { m.putString("via", it) } ?: m.putNull("via")
+      val b = Arguments.createMap()
+      b.putBoolean("paired", AdbShell.isPaired(ctx))
+      b.putBoolean("connected", AdbShell.isConnected())
+      b.putBoolean("devOptions", AdbShell.devOptionsOn(ctx))
+      b.putBoolean("wireless", AdbShell.wirelessOn(ctx))
+      b.putBoolean("wifi", AdbShell.onWifi(ctx))
+      b.putBoolean("autoStart", AdbShell.canAutoStart(ctx))
+      b.putString("pairing", AdbPairingService.state)
+      m.putMap("builtIn", b)
       promise.resolve(m)
     } catch (e: Exception) {
       promise.reject("SHIZUKU_STATUS_ERR", e)
@@ -616,11 +686,11 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun requestShizukuPermission(promise: Promise) {
     try {
-      if (!ShizukuManager.isAvailable()) {
+      if (!ShizukuManager.shizukuRunning()) {
         promise.resolve(false)
         return
       }
-      if (ShizukuManager.hasPermission()) {
+      if (ShizukuManager.shizukuGranted()) {
         promise.resolve(true)
         return
       }

@@ -1,10 +1,7 @@
 /**
- * In-app Shizuku setup (Stage 1): live status + a direct deep-link to Wireless
- * Debugging + the step-by-step guide, all inside CantosHub instead of a webpage.
- *
- * Stage 2 (planned) will drive the wireless-debugging pairing and start Shizuku
- * from here with no separate app — that needs an embedded ADB client and is
- * tested together on-device.
+ * PRO access setup (Access tab). Recommended: CantosHub pairs once with the phone's own
+ * Wireless debugging and runs its shell commands itself (AdbShell / AdbPairingService) - no
+ * other app. The Shizuku app still works as the alternative. Live status while pairing.
  */
 import React, { useEffect } from 'react';
 import { Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -12,6 +9,14 @@ import { Badge, PrimaryButton } from '../components/ui';
 import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, radius, spacing } from '../theme';
+
+const PAIRING_TEXT: Record<string, string> = {
+  searching: 'Waiting for the pairing code… In Wireless debugging tap Pair device with pairing code.',
+  ready: 'Found it. Pull down the CantosHub notification and type the 6-digit code.',
+  pairing: 'Pairing…',
+  connected: '✓ Paired and connected.',
+  failed: 'That code didn’t work. Tap Pair device with pairing code again for a new one.',
+};
 
 export default function ShizukuSetup({
   visible,
@@ -22,107 +27,139 @@ export default function ShizukuSetup({
 }) {
   const store = useStore();
   const { shizuku } = store;
+  const b = shizuku?.builtIn;
 
+  // While open, follow the pairing as it happens in Settings and the notification.
   useEffect(() => {
-    if (visible) store.refreshShizuku();
+    if (!visible) return;
+    store.refreshShizuku();
+    const t = setInterval(() => store.refreshShizuku(), 1500);
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const status = shizuku?.granted
-    ? { text: 'AUTHORIZED', color: colors.accent }
-    : shizuku?.available
-    ? { text: 'RUNNING — NOT AUTHORIZED', color: colors.warn }
-    : { text: 'NOT RUNNING', color: colors.textDim };
+    ? { text: 'ON', color: colors.accent }
+    : b?.paired
+    ? { text: 'NOT CONNECTED', color: colors.warn }
+    : { text: 'OFF', color: colors.textDim };
+
+  const pairing = b?.pairing && b.pairing !== 'idle' ? PAIRING_TEXT[b.pairing] : null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.header}>
-            <Text style={styles.title}>Set up Shizuku</Text>
+            <Text style={styles.title}>PRO access</Text>
             <Badge text={status.text} color={status.color} />
           </View>
           <Text style={styles.sub}>
-            Shizuku unlocks the Pro features (per-game resolution, freeze apps, hide games,
-            system-wide cache trim) with <Text style={styles.bold}>no root</Text>. It's a
-            one-time setup you do right here.
+            Unlocks the PRO features (lower resolution, freeze apps, Free RAM, hide games, Kids
+            top-bar lock, system-wide cache trim) with <Text style={styles.bold}>no root</Text>.
+            CantosHub pairs once with your phone’s Wireless debugging — no other app needed.
           </Text>
 
           {shizuku?.granted ? (
             <View style={styles.doneCard}>
               <Text style={styles.doneText}>
-                ✓ Shizuku is connected and authorized. Pro features are unlocked.
+                {shizuku.via === 'shizuku'
+                  ? '✓ Connected through Shizuku. PRO features are on.'
+                  : '✓ Connected. PRO features are on.'}
               </Text>
+              {shizuku.via !== 'shizuku' && (
+                <Text style={styles.doneSub}>
+                  {b?.autoStart
+                    ? 'After a restart CantosHub turns Wireless debugging back on and reconnects by itself whenever you’re on Wi-Fi.'
+                    : 'After a restart, turn Wireless debugging on again and tap Reconnect here.'}
+                </Text>
+              )}
             </View>
+          ) : b?.paired ? (
+            <Step n={1} title="Reconnect">
+              <Text style={styles.stepText}>
+                {b.wifi
+                  ? 'CantosHub is paired. Tap Reconnect — it turns Wireless debugging on and connects.'
+                  : 'Connect to Wi-Fi first: Wireless debugging only works on Wi-Fi (any network, no internet needed).'}
+              </Text>
+              <View style={styles.stepBtn}>
+                <PrimaryButton
+                  title="Reconnect"
+                  onPress={async () => {
+                    await CantosHub.reconnectBuiltIn();
+                    store.refreshShizuku();
+                  }}
+                />
+              </View>
+              <View style={styles.stepBtn}>
+                <PrimaryButton title="Pair again" variant="outline" onPress={() => CantosHub.startBuiltInPairing()} />
+              </View>
+            </Step>
           ) : (
             <>
-              <Step n={1} title="Turn on Wireless debugging">
+              <Step n={1} title={b?.devOptions ? 'Developer options ✓' : 'Turn on Developer options'}>
                 <Text style={styles.stepText}>
-                  Open Developer Options and enable{' '}
-                  <Text style={styles.bold}>Wireless debugging</Text>. (If you don't see Developer
-                  Options, open Settings → About phone and tap Build number 7 times first.)
-                  {'\n\n'}Wireless debugging only works on Wi-Fi (any network, internet not needed), so
-                  start Shizuku while on Wi-Fi; once started it usually keeps running on mobile data
-                  until the phone restarts. Everything else in CantosHub works without it, and Kids Mode has its own
-                  Kids lock (Kids tab) that needs no Shizuku.
+                  {b?.devOptions
+                    ? 'Developer options are on.'
+                    : 'Open Settings → About phone → Software information and tap Build number 7 times (enter your phone’s PIN if asked).'}
                 </Text>
-                <View style={styles.stepBtn}>
-                  <PrimaryButton
-                    title="Open Developer Options"
-                    onPress={() => CantosHub.openDevSettings()}
-                  />
-                </View>
+                {!b?.devOptions && (
+                  <View style={styles.stepBtn}>
+                    <PrimaryButton title="Open Settings" variant="outline" onPress={() => CantosHub.openDevSettings()} />
+                  </View>
+                )}
               </Step>
 
-              <Step n={2} title="Start Shizuku (one time)">
+              <Step n={2} title="Pair (one time)">
                 <Text style={styles.stepText}>
-                  Until in-app pairing lands, install <Text style={styles.bold}>Shizuku</Text> from
-                  one of these and start it via Wireless debugging — Shizuku walks you through the
-                  pairing. Do not use the Play Store build (it's outdated).
+                  Tap Start pairing. In <Text style={styles.bold}>Wireless debugging</Text> turn it on
+                  (allow your Wi-Fi network), then tap{' '}
+                  <Text style={styles.bold}>Pair device with pairing code</Text>. Pull down the
+                  CantosHub notification and type the 6-digit code — stay on the code screen while
+                  you do. Needs Wi-Fi (any network, no internet needed).
                 </Text>
+                {!!pairing && <Text style={styles.live}>{pairing}</Text>}
                 <View style={styles.stepBtn}>
                   <PrimaryButton
-                    title="Get Shizuku (GitHub)"
-                    onPress={() =>
-                      Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
-                    }
+                    title={pairing ? 'Open Wireless debugging again' : 'Start pairing'}
+                    onPress={() => CantosHub.startBuiltInPairing()}
+                    disabled={!b?.devOptions}
                   />
                 </View>
-                <View style={styles.stepBtn}>
-                  <PrimaryButton
-                    title="Get Shizuku (F-Droid)"
-                    variant="outline"
-                    onPress={() =>
-                      Linking.openURL('https://f-droid.org/packages/moe.shizuku.privileged.api/')
-                    }
-                  />
-                </View>
-              </Step>
-
-              <Step n={3} title="Authorize CantosHub">
-                <Text style={styles.stepText}>
-                  Once Shizuku is running, tap Authorize below and allow CantosHub.
-                </Text>
-                <View style={styles.stepBtn}>
-                  <PrimaryButton
-                    title={shizuku?.available ? 'Authorize CantosHub' : 'Re-check Shizuku'}
-                    onPress={() =>
-                      shizuku?.available ? store.requestShizuku() : store.refreshShizuku()
-                    }
-                  />
-                </View>
+                {!!pairing && b?.pairing !== 'connected' && (
+                  <View style={styles.stepBtn}>
+                    <PrimaryButton title="Cancel pairing" variant="outline" onPress={() => CantosHub.stopBuiltInPairing()} />
+                  </View>
+                )}
               </Step>
             </>
           )}
 
-          <View style={styles.roadmap}>
-            <Text style={styles.roadmapTitle}>Coming: zero separate app</Text>
-            <Text style={styles.roadmapText}>
-              We're building pairing + starting Shizuku directly inside CantosHub, so you won't
-              need any other app — just the one-time Wireless-debugging pair. That step will
-              appear here when ready.
-            </Text>
-          </View>
+          {shizuku?.via !== 'builtin' && (
+            <View style={styles.alt}>
+              <Text style={styles.altTitle}>Or use the Shizuku app</Text>
+              <Text style={styles.altText}>
+                {shizuku?.shizukuGranted
+                  ? 'Shizuku is running and CantosHub is allowed.'
+                  : shizuku?.shizukuRunning
+                  ? 'Shizuku is running — allow CantosHub in it.'
+                  : 'If you already use Shizuku, start it and allow CantosHub. Get it from GitHub or F-Droid (not the Play Store build, it’s outdated).'}
+              </Text>
+              {!shizuku?.shizukuGranted && (
+                <View style={styles.stepBtn}>
+                  <PrimaryButton
+                    title={shizuku?.shizukuRunning ? 'Allow CantosHub in Shizuku' : 'Get Shizuku (GitHub)'}
+                    variant="outline"
+                    onPress={() =>
+                      shizuku?.shizukuRunning
+                        ? store.requestShizuku()
+                        : Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
+                    }
+                  />
+                </View>
+              )}
+            </View>
+          )}
 
           <View style={{ height: spacing.lg }}>
             <PrimaryButton title="Close" variant="outline" onPress={onClose} />
@@ -177,6 +214,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   doneText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
+  doneSub: { color: colors.textDim, fontSize: 13, lineHeight: 19, marginTop: spacing.sm },
+  live: { color: colors.accent2, fontSize: 14, fontWeight: '700', lineHeight: 20, marginTop: spacing.md },
 
   step: {
     backgroundColor: colors.card,
@@ -202,7 +241,7 @@ const styles = StyleSheet.create({
   stepText: { color: colors.textDim, fontSize: 14, lineHeight: 21 },
   stepBtn: { marginTop: spacing.md },
 
-  roadmap: {
+  alt: {
     marginTop: spacing.xl,
     padding: spacing.lg,
     borderRadius: radius.md,
@@ -210,6 +249,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderStyle: 'dashed',
   },
-  roadmapTitle: { color: colors.accent2, fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
-  roadmapText: { color: colors.textDim, fontSize: 13, lineHeight: 20, marginTop: 6 },
+  altTitle: { color: colors.accent2, fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
+  altText: { color: colors.textDim, fontSize: 13, lineHeight: 20, marginTop: 6 },
 });

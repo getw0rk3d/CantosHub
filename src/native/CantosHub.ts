@@ -54,9 +54,25 @@ export type BoostProfile = {
   freezeApps?: string[];
 };
 
+/** CantosHub's own Wireless debugging connection (no Shizuku app). */
+export type BuiltInShell = {
+  paired: boolean; // paired once with Wireless debugging
+  connected: boolean; // connected now: PRO features work
+  devOptions: boolean; // Developer options are on
+  wireless: boolean; // Wireless debugging is on
+  wifi: boolean; // on Wi-Fi now (Wireless debugging needs it)
+  autoStart: boolean; // may switch Wireless debugging on by itself (after a restart)
+  pairing: 'idle' | 'searching' | 'ready' | 'pairing' | 'connected' | 'failed';
+};
+
+/** PRO access: a shell from the Shizuku app or CantosHub's built-in connection. */
 export type ShizukuStatus = {
-  available: boolean; // Shizuku running & reachable
-  granted: boolean; // user authorized CantosHub
+  available: boolean; // a shell is reachable (Shizuku running, or built-in connected)
+  granted: boolean; // PRO features can run now
+  shizukuRunning?: boolean;
+  shizukuGranted?: boolean;
+  via?: 'shizuku' | 'builtin' | null;
+  builtIn?: BuiltInShell;
 };
 
 export type InstalledApp = {
@@ -143,6 +159,9 @@ type NativeShape = {
   setPeakRefreshRate(enable: boolean): Promise<boolean>;
   getShizukuStatus(): Promise<ShizukuStatus>;
   requestShizukuPermission(): Promise<boolean>;
+  startBuiltInPairing(): Promise<boolean>;
+  stopBuiltInPairing(): Promise<boolean>;
+  reconnectBuiltIn(): Promise<boolean>;
   applyShizukuProfile(profileJson: string): Promise<boolean>;
   revertShizukuProfile(): Promise<boolean>;
   listInstalledApps(): Promise<InstalledApp[]>;
@@ -430,6 +449,23 @@ export const CantosHub = {
   async requestShizukuPermission(): Promise<boolean> {
     if (!native) return false;
     return native.requestShizukuPermission();
+  },
+
+  /** Built-in PRO access: show the pairing-code notification and open Wireless debugging. */
+  async startBuiltInPairing(): Promise<boolean> {
+    if (!native) return false;
+    return native.startBuiltInPairing();
+  },
+
+  async stopBuiltInPairing(): Promise<boolean> {
+    if (!native) return true;
+    return native.stopBuiltInPairing();
+  },
+
+  /** Paired before: connect again (CantosHub switches Wireless debugging on if it may). */
+  async reconnectBuiltIn(): Promise<boolean> {
+    if (!native) return false;
+    return native.reconnectBuiltIn();
   },
 
   async applyShizukuProfile(profile: BoostProfile): Promise<boolean> {

@@ -16,6 +16,8 @@ class BootReceiver : BroadcastReceiver() {
     if (action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED) {
       try { BoostActions.revert(context) } catch (e: Exception) { }
       try { ShizukuActions.revert(context) { } } catch (e: Exception) { }
+      // Built-in PRO access: switch Wireless debugging back on and reconnect (once on Wi-Fi).
+      if (AdbShell.isPaired(context)) AdbShell.connectAsync(context, force = true) { MainApplication.onShellReady(context) }
       // Kids Mode stays on across a reboot until the parent unlocks it.
       if (KidsPrefs.isActive(context)) {
         try { KidsService.start(context) } catch (e: Exception) { }

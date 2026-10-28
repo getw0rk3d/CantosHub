@@ -135,6 +135,11 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
+    // Built-in shell without the Shizuku app: pair with Wireless debugging and talk to the
+    // phone's own adbd (AdbShell.kt). libadb-android is used under its Apache-2.0 option.
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

@@ -427,8 +427,8 @@ export default function DashboardScreen({
               leftovers.resolutionChanged ? 'the screen resolution is still lowered' : null,
             ].filter(Boolean).join(' and ')}
             {store.shizuku?.granted
-              ? ' — Shizuku is back, putting it all back now…'
-              : ' — Shizuku stopped before CantosHub could undo it (for example after a restart). Start Shizuku again and CantosHub puts everything back by itself.'}
+              ? ' — PRO access is back, putting it all back now…'
+              : ' — PRO access stopped before CantosHub could undo it (for example after a restart). Once it’s back (on Wi-Fi CantosHub reconnects by itself, or start Shizuku) everything is put back.'}
           </Text>
           {!store.shizuku?.granted && (
             <View style={styles.freeBtn}>
@@ -497,7 +497,7 @@ export default function DashboardScreen({
             locked={!store.shizuku?.granted}
             lockedHint={store.gameBooster.blocked
               ? 'Needs Shizuku to change. Tap to turn Samsung’s booster back on by hand'
-              : 'Needs Shizuku — set it up in Access'}
+              : 'Needs PRO access — set it up in Access'}
             onPressLocked={onBoosterLocked}
             pro
           />

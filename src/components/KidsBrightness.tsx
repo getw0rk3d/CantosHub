@@ -27,11 +27,15 @@ export function KidsBrightnessButton({ open, onToggle }: { open: boolean; onTogg
 export function KidsBrightnessRow({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [state, setState] = useState<{ level: number; auto: boolean; canWrite: boolean } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The parent passes a new onClose on every render; keep the timer (and the read below)
+  // from restarting each time.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   const armClose = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(onClose, CLOSE_AFTER_MS);
-  }, [onClose]);
+    timer.current = setTimeout(() => closeRef.current(), CLOSE_AFTER_MS);
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -69,7 +73,11 @@ export function KidsBrightnessRow({ visible, onClose }: { visible: boolean; onCl
             onPress={() => pick(l, false)}
             style={[styles.step, on && styles.stepOn]}
             accessibilityLabel={`Brightness ${i + 1} of ${LEVELS.length}`}>
-            <Text style={[styles.sun, { fontSize: size, opacity: 0.45 + i * 0.13 }]}>☀️</Text>
+            {/* Dimmed on a wrapper, not the emoji: a step losing its ring used to leave its
+                sun blank (Android didn't redraw the clipped, see-through emoji). */}
+            <View style={{ opacity: 0.45 + i * 0.13 }}>
+              <Text style={[styles.sun, { fontSize: size }]}>☀️</Text>
+            </View>
           </Pressable>
         );
       })}
@@ -105,10 +113,12 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  step: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  stepOn: { backgroundColor: 'rgba(255,212,59,0.3)', borderWidth: 2, borderColor: '#FFD43B' },
+  // The ring is always there (transparent when not picked), so picking only changes colors,
+  // never the layout.
+  step: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  stepOn: { backgroundColor: 'rgba(255,212,59,0.3)', borderColor: '#FFD43B' },
   sun: { textAlign: 'center' },
-  auto: { paddingHorizontal: 14, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
+  auto: { paddingHorizontal: 14, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginLeft: 6, borderWidth: 2, borderColor: 'transparent' },
   autoText: { color: '#C9C3FF', fontSize: 16, fontWeight: '800' },
   autoTextOn: { color: '#FFFFFF' },
   note: { color: '#C9C3FF', fontSize: 14, flex: 1, textAlign: 'center' },

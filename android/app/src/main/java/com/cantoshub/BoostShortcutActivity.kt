@@ -2,39 +2,36 @@ package com.cantoshub
 
 import android.app.Activity
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 
 /**
  * Invisible trampoline launched by home-screen / app-icon shortcuts: starts a
  * boost with the given profile and (optionally) launches a game, then finishes.
+ *
+ * Not exported: only CantosHub's own shortcuts reach it (the launcher starts those as
+ * CantosHub). Open to every app, it let any of them start a boost with any profile it liked -
+ * freezing apps and changing the resolution through CantosHub's Shizuku access. The shortcut
+ * carries just a profile id; the profile itself is today's saved copy (QuickPrefs).
  */
 class BoostShortcutActivity : Activity() {
   companion object {
-    const val EXTRA_PROFILE = "profile"
+    const val EXTRA_PROFILE_ID = "profileId"
+    const val EXTRA_PROFILE = "profile" // shortcuts made before 1.3.5 carry a copy of the profile
     const val EXTRA_LAUNCH_PKG = "launchPkg"
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    val profile = intent?.getStringExtra(EXTRA_PROFILE)
     val launchPkg = intent?.getStringExtra(EXTRA_LAUNCH_PKG)
-
-    if (!profile.isNullOrEmpty()) {
-      val svc = Intent(this, BoostService::class.java).apply {
-        action = BoostService.ACTION_START
-        putExtra(BoostService.EXTRA_PROFILE, profile)
-        putExtra(BoostService.EXTRA_FREERAM, true)
-        putExtra(BoostService.EXTRA_OVERLAY, false)
-      }
-      try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          startForegroundService(svc)
-        } else {
-          startService(svc)
-        }
-      } catch (e: Exception) {
-      }
+    val profile = QuickPrefs.resolve(
+      this,
+      intent?.getStringExtra(EXTRA_PROFILE_ID),
+      intent?.getStringExtra(EXTRA_PROFILE),
+      launchPkg,
+    )
+    try {
+      BoostService.startFromOutside(this, profile)
+    } catch (e: Exception) {
     }
 
     if (!launchPkg.isNullOrEmpty()) {

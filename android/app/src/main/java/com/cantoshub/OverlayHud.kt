@@ -3,6 +3,7 @@ package com.cantoshub
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -25,7 +26,7 @@ class OverlayHud(private val ctx: Context) {
     main.post {
       if (view != null || !Settings.canDrawOverlays(ctx)) return@post
       val tv = TextView(ctx).apply {
-        setBackgroundColor(Color.argb(170, 0, 0, 0))
+        setBackgroundColor(Color.argb(212, 0, 0, 0)) // x the window alpha below = about as dark as before
         setTextColor(Color.parseColor("#00E5A0"))
         textSize = 11f
         setPadding(20, 10, 20, 10)
@@ -47,6 +48,13 @@ class OverlayHud(private val ctx: Context) {
           WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         PixelFormat.TRANSLUCENT,
       )
+      // Android 12+ drops touches that pass through another app's window drawn above 80%
+      // opacity (untrusted-touch occlusion), so taps under the HUD never reached the game.
+      lp.alpha = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        minOf(0.8f, (ctx.getSystemService(Context.INPUT_SERVICE) as InputManager).maximumObscuringOpacityForTouch)
+      } else {
+        0.8f
+      }
       lp.gravity = Gravity.TOP or Gravity.START
       lp.x = 24
       lp.y = 120

@@ -6,7 +6,7 @@
  * @format
  */
 import React, { useState } from 'react';
-import { Modal, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import DashboardScreen from './src/screens/DashboardScreen';
 import LibraryScreen from './src/screens/LibraryScreen';
@@ -108,7 +108,10 @@ function WhatsNewModal() {
         <View style={styles.wnCard}>
           <Text style={styles.wnEyebrow}>WHAT'S NEW</Text>
           <Text style={styles.wnVersion}>CantosHub v{whatsNew?.versionName}</Text>
-          <Text style={styles.wnNotes}>{whatsNew?.notes}</Text>
+          {/* Long notes scroll: they used to push "Got it" off the bottom of the screen. */}
+          <ScrollView style={styles.wnScroll}>
+            <Text style={styles.wnNotes}>{whatsNew?.notes}</Text>
+          </ScrollView>
           <Pressable
             style={styles.wnBtn}
             onPress={dismissWhatsNew}
@@ -160,7 +163,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: 20,
+    maxHeight: '100%',
   },
+  wnScroll: { flexGrow: 0, flexShrink: 1 },
   wnEyebrow: { color: colors.accent, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
   wnVersion: { color: colors.text, fontSize: 20, fontWeight: '900', marginTop: 4 },
   wnNotes: { color: colors.textDim, fontSize: 14, lineHeight: 22, marginTop: 12 },

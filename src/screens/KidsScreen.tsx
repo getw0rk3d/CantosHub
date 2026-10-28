@@ -150,9 +150,9 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           <Text style={styles.heroSub}>
             {kids?.hasPin ? 'PIN set' : 'No PIN yet'} ·{' '}
             {kids?.strongLock && kids?.a11yLock
-              ? 'Strong lock (Shizuku + Kids lock)'
+              ? 'Strong lock (PRO access + Kids lock)'
               : kids?.strongLock
-                ? 'Strong lock (Shizuku)'
+                ? 'Strong lock (PRO access)'
                 : kids?.a11yLock
                   ? 'Strong lock (Kids lock)'
                   : 'Standard lock'}
@@ -235,7 +235,7 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           • Any app that isn't allowed is covered right away and your kid is sent back to their
           apps.{'\n'}• Calls always come through.{'\n'}
           {kids?.strongLock
-            ? '• Shizuku is on: the notification shade and Recents are disabled and CantosHub becomes the Home screen until you unlock.'
+            ? '• PRO access is on: the notification shade and Recents are disabled until you unlock (with button navigation CantosHub also becomes the Home screen).'
             : kids?.a11yLock
               ? '• Kids lock is on: the notification shade, Recents and other apps all lead straight back to the kids screen.'
               : '• For a stronger lock (no notification shade or Recents), turn on Kids lock above.'}

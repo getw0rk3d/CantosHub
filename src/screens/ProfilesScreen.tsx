@@ -256,8 +256,14 @@ export function AppPickerModal({
     setSelected(new Set(initialSelected));
     setQuery('');
     setLoading(true);
-    CantosHub.listInstalledApps()
-      .then(list => setApps(list.sort((a, b) => a.label.localeCompare(b.label))))
+    // Freezing never offers Settings, Shizuku, Home, phone, texts or the keyboard: with
+    // Settings or Shizuku frozen, Shizuku can't be started again to unfreeze anything.
+    Promise.all([CantosHub.listInstalledApps(), multiSelect ? CantosHub.freezeBlocked() : Promise.resolve([])])
+      .then(([list, blockedList]) => {
+        const blocked = new Set(blockedList);
+        setApps(list.filter(a => !blocked.has(a.packageName)).sort((a, b) => a.label.localeCompare(b.label)));
+        setSelected(new Set(initialSelected.filter(p => !blocked.has(p))));
+      })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);

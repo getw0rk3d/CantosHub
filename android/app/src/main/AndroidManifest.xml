@@ -11,8 +11,16 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- "Uninstall game": the system uninstaller refuses apps without it (target 28+) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Granted to itself over the built-in Wireless debugging connection (AdbShell), so
+         CantosHub can switch Wireless debugging back on after a restart. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Owner-granted special access (toggled in system Settings, no root) -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
@@ -83,6 +91,16 @@
             android:value="Maintains the user-selected performance settings (Do Not Disturb, screen timeout, brightness, refresh rate) while gaming, and restores them afterwards." />
       </service>
 
+      <!-- One-time pairing with Wireless debugging (built-in PRO access, no Shizuku app) -->
+      <service
+          android:name=".AdbPairingService"
+          android:exported="false"
+          android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="Shows the pairing-code box while the user pairs CantosHub with the phone's Wireless debugging in Settings." />
+      </service>
+
       <!-- Kids Mode lock (only the parent's chosen apps can be opened) -->
       <service
           android:name=".KidsService"
@@ -127,6 +145,7 @@
           android:exported="true">
         <intent-filter>
           <action android:name="android.intent.action.BOOT_COMPLETED" />
+          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
         </intent-filter>
       </receiver>
 
@@ -152,7 +171,7 @@
       <!-- Invisible trampoline for home-screen / app-icon boost shortcuts -->
       <activity
           android:name=".BoostShortcutActivity"
-          android:exported="true"
+          android:exported="false"
           android:theme="@android:style/Theme.Translucent.NoTitleBar"
           android:excludeFromRecents="true"
           android:taskAffinity=""

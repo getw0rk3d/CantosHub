@@ -15,12 +15,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import { CHANGELOG } from '../changelog';
 import {
   BoostProfile,
+  BoostState,
   Capabilities,
   CantosHub,
+  InstallResult,
   KidsConfig,
   GameBoosterStatus,
   PermissionStatus,
@@ -144,12 +146,15 @@ type Store = {
 
   update: UpdateState | null;
   checkForUpdate: () => Promise<void>;
-  installUpdate: () => Promise<void>;
+  /** Download + install the update; resolves what happened (null: no update to install). */
+  installUpdate: () => Promise<InstallResult | null>;
 
   whatsNew: WhatsNew | null;
   dismissWhatsNew: () => void;
 
   boostRunning: boolean;
+  /** What the boost service is doing (mode, profile / game in use); null until first read. */
+  boostState: BoostState | null;
   /** Re-read whether the boost service is actually running (e.g. stopped from the notification). */
   syncBoost: () => Promise<void>;
   capabilities: Capabilities | null;
@@ -157,10 +162,16 @@ type Store = {
   refreshKids: () => Promise<void>;
   startBoost: () => Promise<void>;
   stopBoost: () => Promise<void>;
-  /** Start a manual boost using a specific profile (used by Games → Boost & Play). */
+  /**
+   * Boost & Play: a manual boost with [profile] - or, in Auto mode, just make sure Auto is
+   * running (it picks the game's profile itself; a manual boost would replace Auto).
+   */
   boostGame: (profile: BoostProfile) => Promise<void>;
-  /** Flip one toggle on the active profile; applies live if boost is running. */
-  toggle: (key: ToggleKey, value: boolean) => Promise<void>;
+  /**
+   * Flip one toggle on a profile (the active one by default). A running boost picks the edit
+   * up through updateAutoProfiles - only the service knows if it's really still running.
+   */
+  toggle: (key: ToggleKey, value: boolean, profileId?: string) => Promise<void>;
 };
 
 const StoreContext = createContext<Store | null>(null);
@@ -180,6 +191,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
   const [boostRunning, setBoostRunning] = useState(false);
+  const [boostState, setBoostState] = useState<BoostState | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [kids, setKids] = useState<KidsConfig | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -196,6 +208,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   shizukuRef.current = shizuku;
   const autoRef = useRef(autoMode);
   autoRef.current = autoMode;
+  const runningRef = useRef(boostRunning);
+  runningRef.current = boostRunning;
   const overlayRef = useRef(showOverlay);
   overlayRef.current = showOverlay;
   const freeRamRef = useRef(freeRamOnBoost);
@@ -218,6 +232,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setShizuku({ available: false, granted: false });
     }
   }, []);
+
+  // The built-in connection came or went (paired, reconnected after a restart, Wi-Fi lost).
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('CantosHubShellChanged', () => {
+      refreshShizuku();
+    });
+    return () => sub.remove();
+  }, [refreshShizuku]);
 
   const requestShizuku = useCallback(async () => {
     try {
@@ -264,9 +286,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const installUpdate = useCallback(async () => {
+  const installUpdate = useCallback(async (): Promise<InstallResult | null> => {
     const u = updateRef.current;
-    if (u?.apkUrl) await CantosHub.installUpdate(u.apkUrl);
+    return u?.apkUrl ? CantosHub.installUpdate(u.apkUrl) : null;
   }, []);
 
   const dismissWhatsNew = useCallback(() => setWhatsNew(null), []);
@@ -387,22 +409,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const applyToggleNative = useCallback(
-    async (key: ToggleKey, value: boolean) => {
-      switch (key) {
-        case 'dnd':
-          return CantosHub.setDnd(value);
-        case 'maxBrightness':
-          return CantosHub.setMaxBrightness(value);
-        case 'keepAwake':
-          return CantosHub.setKeepAwake(value);
-        case 'peakRefreshRate':
-          return CantosHub.setPeakRefreshRate(value);
-      }
-    },
-    [],
-  );
-
   const startBoost = useCallback(async () => {
     const overlay = overlayRef.current;
     const freeRam = freeRamRef.current;
@@ -415,11 +421,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       await CantosHub.startBoost(activeRef.current, overlay, freeRam);
     }
     setBoostRunning(true);
+    setBoostState({ running: true, auto: autoRef.current, profileId: autoRef.current ? null : activeRef.current.id, game: null });
   }, []);
 
   const stopBoost = useCallback(async () => {
     await CantosHub.stopBoost(); // the service reverts everything, incl. Shizuku parts
     setBoostRunning(false);
+    setBoostState({ running: false, auto: false, profileId: null, game: null });
   }, []);
 
   const refreshKids = useCallback(async () => {
@@ -432,30 +440,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const syncBoost = useCallback(async () => {
     try {
-      setBoostRunning(await CantosHub.isBoostRunning());
+      const s = await CantosHub.getBoostState();
+      setBoostRunning(s.running);
+      setBoostState(prev =>
+        prev && prev.running === s.running && prev.auto === s.auto && prev.profileId === s.profileId && prev.game === s.game
+          ? prev
+          : s,
+      );
     } catch {
       // keep current value
     }
   }, []);
 
   const boostGame = useCallback(async (profile: BoostProfile) => {
+    if (autoRef.current) {
+      // Library Play used to start a manual boost here, quietly ending Auto while the app
+      // still said Auto.
+      if (!runningRef.current) await startBoost();
+      return;
+    }
     setActiveProfileId(profile.id);
     await CantosHub.startBoost(profile, overlayRef.current, freeRamRef.current);
     setBoostRunning(true);
-  }, []);
+    setBoostState({ running: true, auto: false, profileId: profile.id, game: null });
+  }, [startBoost]);
 
   const toggle = useCallback(
-    async (key: ToggleKey, value: boolean) => {
-      updateProfile(activeRef.current.id, { [key]: value });
-      if (boostRunning && !autoRef.current) {
-        try {
-          await applyToggleNative(key, value);
-        } catch {
-          // surfaced by the next telemetry/permission refresh
-        }
-      }
+    async (key: ToggleKey, value: boolean, profileId?: string) => {
+      // No direct settings write: after a Stop from the notification or tile the app still
+      // thought it was boosting, and wrote DND / timeout with nothing left to restore them.
+      updateProfile(profileId ?? activeRef.current.id, { [key]: value });
     },
-    [applyToggleNative, boostRunning, updateProfile],
+    [updateProfile],
   );
 
   // On launch, undo anything left applied if the app was killed mid-boost,
@@ -489,14 +505,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [refreshPermissions, refreshShizuku, refreshGameBooster, syncBoost, refreshKids]);
 
-  // Profile edits reach a running Auto boost right away (no stop/start needed).
+  // Profile edits reach a running boost right away, Auto or Manual (no stop/start needed).
   useEffect(() => {
-    if (!hydrated || !boostRunning || !autoMode) return;
+    if (!hydrated || !boostRunning) return;
     const t = setTimeout(() => {
       CantosHub.updateAutoProfiles(profiles).catch(() => {});
     }, 400);
     return () => clearTimeout(t);
-  }, [hydrated, boostRunning, autoMode, profiles]);
+  }, [hydrated, boostRunning, profiles]);
+
+  // Home-screen shortcuts and the Quick tile read these natively when tapped.
+  useEffect(() => {
+    if (!hydrated) return;
+    const t = setTimeout(() => {
+      CantosHub.syncBoostSettings({
+        profiles,
+        activeId: activeProfileId,
+        auto: autoMode,
+        overlay: showOverlay,
+        freeRam: freeRamOnBoost,
+      }).catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [hydrated, profiles, activeProfileId, autoMode, showOverlay, freeRamOnBoost]);
 
   // After an update installs, show "What's new" once for the new version.
   useEffect(() => {
@@ -664,6 +695,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     whatsNew,
     dismissWhatsNew,
     boostRunning,
+    boostState,
     syncBoost,
     capabilities,
     kids,

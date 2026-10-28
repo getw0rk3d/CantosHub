@@ -8,6 +8,8 @@ import {
   Alert,
   FlatList,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,6 +24,8 @@ import { Badge, PrimaryButton, SectionCard } from '../components/ui';
 import { CantosHub, GameInfo, GameStat, ShortcutSpec } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, radius, spacing } from '../theme';
+
+const PAGE = 40;
 
 function fmtTime(ms: number): string {
   const m = Math.round(ms / 60000);
@@ -42,6 +46,10 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
   const [newFolder, setNewFolder] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
+  // Rows drawn so far. ALL APPS drew every app at once, each asking for its icon, and the
+  // icon requests queued ahead of Play / launch on the native side; now more come as you scroll.
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [showAll, selectedFolder]);
 
   const addedPkgs = store.addedGames.map(a => a.packageName);
   const addedKey = addedPkgs.join(',');
@@ -120,12 +128,20 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
   );
   const folder = store.folders.find(f => f.id === selectedFolder);
   const visible = folder ? sorted.filter(g => folder.packages.includes(g.packageName)) : sorted;
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    if (limit < visible.length && contentOffset.y + layoutMeasurement.height > contentSize.height - 800) {
+      setLimit(l => l + PAGE);
+    }
+  };
   const usageOff = !!store.permissions && !store.permissions.usageAccess;
 
   return (
     <View style={styles.root}>
       <ScrollView
         contentContainerStyle={styles.content}
+        onScroll={onScroll}
+        scrollEventThrottle={250}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={() => load(showAll)} tintColor={colors.accent} />
         }>
@@ -212,14 +228,17 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
           </SectionCard>
         ) : (
           <View style={styles.list}>
-            {visible.map((g, i) => {
+            {visible.slice(0, limit).map((g, i) => {
               const profile = store.profiles.find(p => p.packageName === g.packageName);
               const st = stats[g.packageName];
               const hidden = hiddenSet.has(g.packageName);
               const played = fmtTime(g.totalTimeMs);
               const onPlay = async () => {
                 if (hidden && !(await unhideOrExplain(g))) return;
-                if (profile) await store.boostGame(profile);
+                // Same as the Dashboard: in Auto mode just make sure Auto is watching (a manual
+                // boost here used to end Auto while the app still said Auto).
+                if (profile && !store.autoMode) await store.boostGame(profile);
+                else if (store.autoMode && !store.boostRunning) await store.startBoost();
                 await CantosHub.launchApp(g.packageName);
               };
               return (

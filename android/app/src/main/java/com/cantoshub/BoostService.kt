@@ -22,6 +22,7 @@ import android.os.PowerManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
@@ -64,9 +65,63 @@ class BoostService : Service() {
       "com.google.android.gms",
     )
 
+    // Auto restarted by the system with settings still applied from before: which game they
+    // were for is gone, so the next game (or leaving it) switches/reverts as usual.
+    private const val UNKNOWN_GAME = "?"
+
     @Volatile
     var isRunning = false
       private set
+
+    /** What's running, for the app: Auto or Manual, and the profile / game in use. */
+    @Volatile
+    var isAuto = false
+      private set
+
+    @Volatile
+    var runningProfileId: String? = null
+      private set
+
+    @Volatile
+    var boostedGame: String? = null
+      private set
+
+    /**
+     * Every settings change of a boost (apply, revert, Free RAM) runs here, one at a time and
+     * in order. They used to run on whichever thread asked, so a Stop right after a Start could
+     * revert before the start's changes landed, leaving them on with no boost running.
+     */
+    private val applier = Executors.newSingleThreadExecutor { r -> Thread(r, "cantoshub-boost").apply { isDaemon = true } }
+
+    /**
+     * Start a boost from outside the app (home-screen shortcut, Quick tile) the way the app
+     * would: Auto when the app is in Auto mode (never replaced by a one-profile boost),
+     * otherwise [profile]. Settings are the app's last saved ones (QuickPrefs).
+     */
+    fun startFromOutside(ctx: Context, profile: JSONObject?) {
+      val auto = QuickPrefs.autoMode(ctx) && QuickPrefs.profilesJson(ctx) != "[]"
+      if (auto && isRunning && isAuto) return
+      if (!auto && profile == null) return
+      val intent = Intent(ctx, BoostService::class.java).apply {
+        if (auto) {
+          action = ACTION_START_AUTO
+          putExtra(EXTRA_PROFILES, QuickPrefs.profilesJson(ctx))
+        } else {
+          action = ACTION_START
+          putExtra(EXTRA_PROFILE, profile.toString())
+        }
+        putExtra(EXTRA_OVERLAY, QuickPrefs.showOverlay(ctx))
+        putExtra(EXTRA_FREERAM, QuickPrefs.freeRam(ctx))
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent) else ctx.startService(intent)
+    }
+
+    /** No boost running but PRO changes still recorded (Shizuku was gone): undo them now. */
+    fun undoLeftovers(ctx: Context) {
+      if (isRunning || !ShizukuManager.canRun()) return
+      val (frozen, res) = ShizukuActions.pending(ctx)
+      if (frozen > 0 || res) applier.execute { ShizukuActions.revert(ctx) { } }
+    }
   }
 
   private var workThread: HandlerThread? = null
@@ -80,6 +135,7 @@ class BoostService : Service() {
   private var profiles: List<JSONObject> = emptyList()
   private var appliedPackage: String? = null
   private var appliedProfileName: String = ""
+  private var appliedProfile: JSONObject? = null // what's applied now (both modes)
 
   // Auto-mode foreground tracking + anti-flap state.
   private var missCount = 0
@@ -106,7 +162,7 @@ class BoostService : Service() {
         stopBoost()
         return START_NOT_STICKY
       }
-      if (restored.action == ACTION_START_AUTO) startAuto(restored) else startManual(restored)
+      if (restored.action == ACTION_START_AUTO) startAuto(restored, restarted = true) else startManual(restored)
       return START_STICKY
     }
     when (intent.action) {
@@ -115,11 +171,13 @@ class BoostService : Service() {
         return START_NOT_STICKY
       }
       ACTION_UPDATE_PROFILES -> {
-        // Live profile edits while Auto is running: swap the list without resetting
-        // the current game's state (no re-boost, no second Free RAM).
-        if (isRunning && auto) {
-          profiles = parseArray(intent.getStringExtra(EXTRA_PROFILES))
-          rememberStart(ACTION_START_AUTO, intent.getStringExtra(EXTRA_PROFILES), null)
+        // Live profile edits while boosting: no re-boost, no second Free RAM.
+        if (isRunning) {
+          val json = intent.getStringExtra(EXTRA_PROFILES)
+          val list = parseArray(json)
+          // Auto's state lives on the watch thread.
+          if (auto) workHandler?.post { onProfilesEdited(list, json) } ?: onProfilesEdited(list, json)
+          else onProfilesEdited(list, json)
         }
         return START_STICKY
       }
@@ -165,49 +223,137 @@ class BoostService : Service() {
 
   private fun startManual(intent: Intent?) {
     createChannel()
+    val wasRunning = isRunning
+    val prevGame = (if (auto) appliedPackage else appliedProfile?.optString("packageName", "")) ?: ""
     auto = false
     showOverlay = intent?.getBooleanExtra(EXTRA_OVERLAY, false) ?: false
     freeRamOnBoost = intent?.getBooleanExtra(EXTRA_FREERAM, true) ?: true
     val profile = parseObject(intent?.getStringExtra(EXTRA_PROFILE))
     appliedProfileName = profile.optString("name", "Boost")
+    appliedProfile = profile
+    appliedPackage = null
+    val pkg = profile.optString("packageName", "")
+    publishState(profile.optString("id", "").ifEmpty { null }, pkg.ifEmpty { null })
     startForegroundCompat(buildNotification("Boost active", "Profile: $appliedProfileName"))
     isRunning = true
     acquireWifiLock()
-    // Apply + Free RAM off the main thread — onStartCommand runs on the main thread
-    // and this work (Settings writes + a kill sweep) would otherwise jank/ANR right
-    // as the user taps Start.
-    Thread {
+    // Same game again (Play tapped twice): no second kill sweep.
+    val freeRam = freeRamOnBoost && !(wasRunning && pkg.isNotBlank() && pkg == prevGame)
+    // Off the main thread (Settings writes + a kill sweep would jank/ANR right as the user
+    // taps Start), in order with every other boost change.
+    applier.execute {
+      // A boost was already on: undo it first, so its PRO changes (lowered resolution, frozen
+      // apps) don't stay on under the new profile.
+      if (wasRunning) revertNow()
       try { BoostActions.applyProfile(this, profile) } catch (e: Exception) { }
       if (ShizukuManager.hasPermission()) {
         try { ShizukuActions.apply(this, profile) { } } catch (e: Exception) { }
       }
-      val pkg = profile.optString("packageName", "")
       if (pkg.isNotBlank()) StatsStore.recordSession(this, pkg)
-      if (freeRamOnBoost) {
+      if (freeRam) {
         try { Cleanup.killBackground(this, if (pkg.isNotBlank()) pkg else null) } catch (e: Exception) { }
       }
-    }.start()
+    }
     startOverlayIfNeeded()
-    if (showOverlay) startWorker()
+    if (showOverlay) startWorker() else workHandler?.removeCallbacks(tick) // was Auto: stop watching
   }
 
-  private fun startAuto(intent: Intent?) {
+  private fun startAuto(intent: Intent?, restarted: Boolean = false) {
     createChannel()
+    val wasRunning = isRunning
     auto = true
     showOverlay = intent?.getBooleanExtra(EXTRA_OVERLAY, false) ?: false
     freeRamOnBoost = intent?.getBooleanExtra(EXTRA_FREERAM, true) ?: true
     profiles = parseArray(intent?.getStringExtra(EXTRA_PROFILES))
-    appliedPackage = null
+    // The previous boost (a manual profile, or the old Auto's game) comes off before watching.
+    if (wasRunning) applier.execute { revertNow() }
+    // Restarted by the system with a game's settings still on: keep them owed, so leaving the
+    // game (or switching) reverts them - they used to stay on until Stop.
+    val owed = restarted && (BoostActions.hasSnapshot(this) || ShizukuActions.pending(this).let { it.first > 0 || it.second })
+    appliedPackage = if (owed) UNKNOWN_GAME else null
     appliedProfileName = ""
+    appliedProfile = null
     missCount = 0
     lastFreedPkg = null
     lastKnownFg = null
     lastEventQueryTime = 0L
+    publishState(null, null)
     startForegroundCompat(buildNotification("Auto boost", "Watching for games…"))
     isRunning = true
     acquireWifiLock()
     startOverlayIfNeeded()
     startWorker()
+  }
+
+  /** Undo everything a boost changed. Runs on [applier]. */
+  private fun revertNow() {
+    try { BoostActions.revert(this) } catch (e: Exception) { }
+    try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+  }
+
+  private fun publishState(profileId: String?, game: String?) {
+    isAuto = auto
+    runningProfileId = profileId
+    boostedGame = game
+  }
+
+  /**
+   * The app saved edited profiles while boosting. Re-apply the profile in use if it changed (a
+   * quick toggle, a new resolution, another freeze list) - Auto only swapped its list before,
+   * so edits to the game being played never took effect, and Manual ignored edits entirely.
+   * In Auto a profile deleted or unbound from the current game ends that game's boost; in
+   * Manual a deleted profile keeps running as started.
+   */
+  private fun onProfilesEdited(list: List<JSONObject>, json: String?) {
+    if (!isRunning) return
+    if (auto) {
+      profiles = list
+      rememberStart(ACTION_START_AUTO, json, null)
+      val game = appliedPackage ?: return
+      if (game == UNKNOWN_GAME) return
+      val now = list.firstOrNull { it.optString("packageName", "") == game }
+      if (now == null) {
+        applier.execute { revertNow() }
+        appliedPackage = null
+        appliedProfileName = ""
+        appliedProfile = null
+        lastFreedPkg = null
+        publishState(null, null)
+        updateNotification("Auto boost", "Watching for games…")
+        return
+      }
+      reapply(now)
+      updateNotification("Auto boost", "Active: $appliedProfileName")
+    } else {
+      val running = appliedProfile ?: return
+      val id = running.optString("id", "")
+      if (id.isEmpty()) return
+      val now = list.firstOrNull { it.optString("id", "") == id } ?: return
+      // Keep the game it was started for (a shortcut can start a profile for another game).
+      val next = JSONObject(now.toString()).put("packageName", running.optString("packageName", ""))
+      rememberStart(ACTION_START, next.toString(), null)
+      reapply(next)
+      updateNotification("Boost active", "Profile: $appliedProfileName")
+    }
+  }
+
+  private fun reapply(next: JSONObject) {
+    val prev = appliedProfile ?: JSONObject()
+    if (prev.toString() == next.toString()) return
+    appliedProfile = next
+    appliedProfileName = next.optString("name", "Boost")
+    val proChanged = prev.optDouble("resolutionScale", 1.0) != next.optDouble("resolutionScale", 1.0) ||
+      (prev.optJSONArray("freezeApps")?.toString() ?: "[]") != (next.optJSONArray("freezeApps")?.toString() ?: "[]")
+    applier.execute {
+      // The no-root toggles switch over in place (each one undoes only what a boost set).
+      try { BoostActions.applyProfile(this, next) } catch (e: Exception) { }
+      if (proChanged) {
+        try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+        if (ShizukuManager.hasPermission()) {
+          try { ShizukuActions.apply(this, next) { } } catch (e: Exception) { }
+        }
+      }
+    }
   }
 
   private fun startWorker() {
@@ -253,23 +399,27 @@ class BoostService : Service() {
     }
 
     if (match != null) {
-      // A (different) profiled game is now foreground — switch to it.
-      if (appliedPackage != null) {
-        try { BoostActions.revert(this) } catch (e: Exception) { }
-        try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+      // A (different) profiled game is now foreground — switch to it. The revert is queued
+      // ahead of the apply, so it finishes first (see ShizukuManager.submit).
+      val switching = appliedPackage != null
+      // Free RAM at most once per game session — never a mid-game kill-storm.
+      val freeRam = freeRamOnBoost && matchPkg != null && matchPkg != lastFreedPkg
+      applier.execute {
+        if (switching) revertNow()
+        try { BoostActions.applyProfile(this, match) } catch (e: Exception) { }
+        if (ShizukuManager.hasPermission()) {
+          try { ShizukuActions.apply(this, match) { } } catch (e: Exception) { }
+        }
+        if (freeRam) {
+          try { Cleanup.killBackground(this, matchPkg) } catch (e: Exception) { }
+        }
       }
-      try { BoostActions.applyProfile(this, match) } catch (e: Exception) { }
-      if (ShizukuManager.hasPermission()) {
-        try { ShizukuActions.apply(this, match) { } } catch (e: Exception) { }
-      }
+      if (freeRam) lastFreedPkg = matchPkg
       appliedPackage = matchPkg
       appliedProfileName = match.optString("name", "Boost")
+      appliedProfile = match
+      publishState(null, matchPkg)
       if (matchPkg != null) StatsStore.recordSession(this, matchPkg)
-      // Free RAM at most once per game session — never a mid-game kill-storm.
-      if (freeRamOnBoost && matchPkg != null && matchPkg != lastFreedPkg) {
-        try { Cleanup.killBackground(this, matchPkg) } catch (e: Exception) { }
-        lastFreedPkg = matchPkg
-      }
       missCount = 0
       updateNotification("Auto boost", "Active: $appliedProfileName")
     } else if (appliedPackage != null) {
@@ -277,12 +427,13 @@ class BoostService : Service() {
       // blip (ad, sign-in, a quick home tap) can't tear down the boost mid-game.
       missCount++
       if (missCount >= REVERT_MISSES) {
-        try { BoostActions.revert(this) } catch (e: Exception) { }
-        try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+        applier.execute { revertNow() }
         appliedPackage = null
         appliedProfileName = ""
+        appliedProfile = null
         lastFreedPkg = null
         missCount = 0
+        publishState(null, null)
         updateNotification("Auto boost", "Watching for games…")
       }
     }
@@ -294,24 +445,27 @@ class BoostService : Service() {
     workThread?.quitSafely()
     workThread = null
     workHandler = null
-    try { BoostActions.revert(this) } catch (e: Exception) { }
-    try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+    applier.execute { revertNow() } // after any apply still in flight
     releaseWifiLock()
     overlay?.hide()
     overlay = null
     appliedPackage = null
+    appliedProfile = null
     isRunning = false
+    auto = false
+    publishState(null, null)
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
   }
 
   override fun onDestroy() {
     if (isRunning) {
-      try { BoostActions.revert(this) } catch (e: Exception) { }
-      try { ShizukuActions.revert(this) { } } catch (e: Exception) { }
+      applier.execute { revertNow() }
       releaseWifiLock()
       overlay?.hide()
       isRunning = false
+      auto = false
+      publishState(null, null)
     }
     super.onDestroy()
   }
@@ -435,7 +589,11 @@ class BoostService : Service() {
       val frames = parseTotalFrames(out)
       val now = System.currentTimeMillis()
       if (frames >= 0) {
-        if (pkg == lastFpsPkg && lastFrames in 0..frames && lastFramesAt > 0L) {
+        if (pkg == lastFpsPkg && frames == lastFrames) {
+          // No app-drawn frames: a game engine (Unity, Unreal...) draws on its own surface,
+          // which gfxinfo doesn't count. Hide FPS rather than show "0 fps".
+          currentFps = -1
+        } else if (pkg == lastFpsPkg && lastFrames in 0..frames && lastFramesAt > 0L) {
           val dt = (now - lastFramesAt) / 1000.0
           if (dt > 0.3) {
             currentFps = ((frames - lastFrames) / dt).roundToInt()

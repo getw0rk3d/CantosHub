@@ -5,7 +5,8 @@
  */
 export const CHANGELOG: Record<string, string> = {
   '1.3.5':
-    '• Security: other apps can no longer start a boost through CantosHub (they could freeze apps or change your resolution with CantosHub’s Shizuku access). Home-screen shortcuts and the Quick tile now always use your profiles as they are today.' +
+    '• NEW: PRO access without the Shizuku app. In Access → Set up PRO access, CantosHub pairs once with your phone’s Wireless debugging (type the code in its notification). After a restart it turns Wireless debugging back on and reconnects by itself whenever you’re on Wi-Fi. Shizuku still works if you use it.' +
+    '\n• Security: other apps can no longer start a boost through CantosHub (they could freeze apps or change your resolution with CantosHub’s Shizuku access). Home-screen shortcuts and the Quick tile now always use your profiles as they are today.' +
     '\n• Fixed: switching straight from one game to another in Auto could leave the second game’s frozen apps frozen for good. PRO changes from the previous game or profile are now undone before the next one starts.' +
     '\n• Fixed: Play in the Games tab quietly turned Auto mode into a single-profile boost. Edits to the profile in use (quick toggles, resolution, frozen apps) now apply right away, in Auto and Manual.' +
     '\n• Fixed: Do Not Disturb. A profile without DND no longer turns your own DND off, and a boost no longer leaves DND on after a Bedtime schedule.' +

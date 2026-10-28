@@ -52,7 +52,7 @@ export async function afterKidsUnlock(): Promise<void> {
   if (!cfg?.barStuck) return offerHomeGiveBack();
   Alert.alert(
     'Top bar is still off',
-    'Kids lock turned off the notification shade and Recents through Shizuku, and Shizuku has stopped since. Start Shizuku again (CantosHub turns them back on by itself) or restart the phone.',
+    'Kids lock turned off the notification shade and Recents through PRO access, which has stopped since. Once it’s back (on Wi-Fi CantosHub reconnects by itself, or start Shizuku) they come back on, or restart the phone.',
     [{ text: 'OK', onPress: () => { offerHomeGiveBack(); } }],
     { cancelable: false },
   );

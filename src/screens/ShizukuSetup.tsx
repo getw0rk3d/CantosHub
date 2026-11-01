@@ -153,22 +153,22 @@ export default function ShizukuSetup({
                 ? 'Shizuku is running — allow CantosHub in it.'
                 : 'The built-in connection only works on Wi-Fi. The Shizuku app also starts on Wi-Fi, but once started it keeps PRO working on mobile data until the phone restarts — start it before you leave. CantosHub uses it automatically. Get it from GitHub or F-Droid (not the Play Store build, it’s outdated).'}
             </Text>
-              {!shizuku?.shizukuGranted && (
-                <View style={styles.stepBtn}>
-                  <PrimaryButton
-                    title={shizuku?.shizukuRunning ? 'Allow CantosHub in Shizuku' : 'Get Shizuku (GitHub)'}
-                    variant="outline"
-                    onPress={() =>
-                      shizuku?.shizukuRunning
-                        ? store.requestShizuku()
-                        : Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
-                    }
-                  />
-                </View>
-              )}
+            {!shizuku?.shizukuGranted && (
+              <View style={styles.stepBtn}>
+                <PrimaryButton
+                  title={shizuku?.shizukuRunning ? 'Allow CantosHub in Shizuku' : 'Get Shizuku (GitHub)'}
+                  variant="outline"
+                  onPress={() =>
+                    shizuku?.shizukuRunning
+                      ? store.requestShizuku()
+                      : Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
+                  }
+                />
+              </View>
+            )}
           </View>
 
-          <View style={{ height: spacing.lg }}>
+          <View style={{ marginTop: spacing.lg }}>
             <PrimaryButton title="Close" variant="outline" onPress={onClose} />
           </View>
         </ScrollView>

@@ -242,6 +242,11 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           {kids?.gestureNav
             ? '\n• Home: swiping up to go Home brings your kid straight back to the kids screen.'
             : kids?.strongLock ? '' : '\n• Home button: when you start Kids Mode, CantosHub asks Android to make the kids screen your Home app (you confirm it). After you unlock, CantosHub opens the Default home app list so you can switch back with one tap. No Shizuku needed.'}
+          {kids?.strongLock
+            ? '\n• Videos don’t float: YouTube and other video apps can’t go picture-in-picture, and they close when your kid leaves them.\n• When you unlock, the apps your kid used are closed and cleared from Recents.'
+            : kids?.a11yLock
+              ? '\n• Videos don’t float: a picture-in-picture video is closed when your kid leaves the app. With PRO access, the apps your kid used are also closed and cleared from Recents when you unlock.'
+              : ''}
           {'\n'}• Kids Mode stays on after a restart until you unlock it.
         </Text>
       </SectionCard>

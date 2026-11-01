@@ -76,8 +76,10 @@ class MainApplication : Application(), ReactApplication {
      */
     fun onShellReady(ctx: Context) {
       KidsService.releaseBar(ctx)
+      KidsService.restorePip(ctx)
       BoostService.undoLeftovers(ctx)
       KidsService.instance?.reapplyLock()
+      HiddenApps.rehideClosed(ctx)
     }
   }
 }

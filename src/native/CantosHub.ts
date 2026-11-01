@@ -93,6 +93,8 @@ export type GameInfo = {
   packageName: string;
   label: string;
   totalTimeMs: number; // foreground time over the last ~7 days
+  hidden?: boolean; // CantosHub hid it from the phone (switched off, listed from its own record)
+  sleeping?: boolean; // asleep until opened: only the system can change it, so it can't be hidden from here
 };
 
 export type VersionInfo = {
@@ -180,8 +182,10 @@ type NativeShape = {
   openDevSettings(): Promise<boolean>;
   getGameBoosterStatus(): Promise<GameBoosterStatus>;
   setGameBoosterBlocked(blocked: boolean): Promise<boolean>;
-  hideApp(packageName: string): Promise<boolean>;
-  unhideApp(packageName: string): Promise<boolean>;
+  hideApps(packageNames: string[]): Promise<string[]>;
+  showApps(packageNames: string[]): Promise<string[]>;
+  hiddenState(savedHidden: string[]): Promise<HiddenState>;
+  forgetHidden(packageNames: string[]): Promise<boolean>;
   setQuickTileProfile(profileJson: string): Promise<boolean>;
   requestAddTile(): Promise<boolean>;
   setGameShortcuts(jsonArray: string): Promise<boolean>;
@@ -205,6 +209,9 @@ export type KidsConfig = {
 
 /** ok: unlocked. waitMs > 0: too many wrong PINs, wait that long before the next try. */
 export type KidsStopResult = { ok: boolean; waitMs: number };
+
+/** out: hidden games switched on for now (opened from CantosHub, hidden again once closed). */
+export type HiddenState = { out: string[] };
 
 export type KidsStartResult = 'OK' | 'NO_PIN' | 'NO_APPS' | 'NO_OVERLAY' | 'NO_USAGE';
 
@@ -560,15 +567,27 @@ export const CantosHub = {
     return native.setGameBoosterBlocked(blocked);
   },
 
-  /** Hide a game from the launcher (Shizuku). Returns false if Shizuku isn't granted. */
-  async hideApp(packageName: string): Promise<boolean> {
-    if (!native) return false;
-    return native.hideApp(packageName);
+  /** Hide games from the phone (PRO). Resolves the ones hidden ([] without PRO). */
+  async hideApps(packageNames: string[]): Promise<string[]> {
+    if (!native) return [];
+    return native.hideApps(packageNames);
   },
 
-  async unhideApp(packageName: string): Promise<boolean> {
-    if (!native) return false;
-    return native.unhideApp(packageName);
+  /** Show hidden games on the phone again for good (PRO). Resolves the ones that are back. */
+  async showApps(packageNames: string[]): Promise<string[]> {
+    if (!native) return [];
+    return native.showApps(packageNames);
+  },
+
+  /** Hidden games switched on for now because they were opened from CantosHub. */
+  async hiddenState(savedHidden: string[]): Promise<HiddenState> {
+    if (!native) return { out: [] };
+    return native.hiddenState(savedHidden);
+  },
+
+  async forgetHidden(packageNames: string[]): Promise<boolean> {
+    if (!native) return true;
+    return native.forgetHidden(packageNames);
   },
 
   async setQuickTileProfile(profile: BoostProfile): Promise<boolean> {

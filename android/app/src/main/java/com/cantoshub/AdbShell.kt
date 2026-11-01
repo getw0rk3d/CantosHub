@@ -180,11 +180,18 @@ object AdbShell {
     onChange?.invoke()
   }
 
-  /** (Re)start the idle countdown; the connection closes [IDLE_MS] after the last command. */
+  /**
+   * (Re)start the idle countdown; the connection closes [IDLE_MS] after the last command. Not
+   * during Kids Mode: it runs commands now and then (closing a video app the kid left), and
+   * each reconnect popped the alert over the kid's screen.
+   */
   private fun scheduleIdleClose() {
     synchronized(lock) {
       idleClose?.cancel(false)
-      idleClose = timer.schedule({ if (isConnected()) disconnect() }, IDLE_MS, TimeUnit.MILLISECONDS)
+      idleClose = timer.schedule({
+        val kids = appCtx?.let { KidsPrefs.isActive(it) } == true
+        if (kids) scheduleIdleClose() else if (isConnected()) disconnect()
+      }, IDLE_MS, TimeUnit.MILLISECONDS)
     }
   }
 

@@ -53,10 +53,12 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
 
   const addedPkgs = store.addedGames.map(a => a.packageName);
   const addedKey = addedPkgs.join(',');
+  const { refreshHiddenOut } = store;
   const load = useCallback(async (all: boolean) => {
     setLoading(true);
     try {
       CantosHub.getGameStats().then(setStats).catch(() => {});
+      await refreshHiddenOut(); // before the list: hidden games opened from here look installed
       if (all) {
         const apps = await CantosHub.listInstalledApps();
         setGames(apps.map(a => ({ ...a, totalTimeMs: 0 })));
@@ -66,7 +68,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
     } finally {
       setLoading(false);
     }
-  }, [addedKey]);
+  }, [addedKey, refreshHiddenOut]);
 
   useEffect(() => {
     store.refreshPermissions();
@@ -96,21 +98,27 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
   // Hidden games are disabled in the launcher, so they no longer appear in
   // listGames — fold them back in from our saved list so they live in CantosHub.
   // A hidden game that shows up as installed+launchable again was re-enabled outside
-  // CantosHub (e.g. its App info Enable button): stop calling it hidden.
+  // CantosHub (e.g. its App info Enable button): stop calling it hidden. Not one opened from
+  // here: that's switched on only until it closes.
   const { forgetHidden } = store;
   useEffect(() => {
     if (loading || showAll) return;
-    const visible = new Set(games.map(g => g.packageName));
-    forgetHidden(store.hiddenGames.filter(h => visible.has(h.packageName)).map(h => h.packageName));
+    const visible = new Set(games.filter(g => !g.hidden).map(g => g.packageName));
+    const out = new Set(store.hiddenOut);
+    forgetHidden(
+      store.hiddenGames
+        .filter(h => visible.has(h.packageName) && !out.has(h.packageName))
+        .map(h => h.packageName),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [games, loading, showAll]);
 
-  // Without Shizuku a hidden (disabled) game comes back through its App info Enable button.
+  // Without PRO a hidden (disabled) game comes back through its App info Enable button.
   const unhideOrExplain = async (g: GameInfo): Promise<boolean> => {
-    if (store.shizuku?.granted) return store.unhideGame(g.packageName);
+    if (store.shizuku?.granted) return (await store.showGames([g.packageName])).length > 0;
     Alert.alert(
       `Show ${g.label} again`,
-      'It was hidden with Shizuku, which isn’t running. On the next screen tap Enable, then come back.',
+      'It was hidden with PRO access, which isn’t on right now. On the next screen tap Enable, then come back.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Open', onPress: () => { CantosHub.openAppInfo(g.packageName); } },
@@ -119,7 +127,106 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
     return false;
   };
 
+  const [hiding, setHiding] = useState(false);
   const hiddenSet = new Set(store.hiddenGames.map(h => h.packageName));
+  const kidsApps = new Set(store.kids?.allowed ?? []);
+  // Kids apps stay on the phone: Kids Mode opens them through Android, not through CantosHub.
+  const onPhone = games.filter(
+    g => !g.hidden && !hiddenSet.has(g.packageName) && g.packageName !== 'com.cantoshub' && !kidsApps.has(g.packageName),
+  );
+  const hideable = onPhone.filter(g => !g.sleeping);
+  const asleep = onPhone.filter(g => g.sleeping);
+  const kidsKept = games.filter(g => !g.hidden && !hiddenSet.has(g.packageName) && kidsApps.has(g.packageName)).length;
+
+  const openHomeHide = async () => {
+    if (!(await CantosHub.openLauncherHideApps())) {
+      Alert.alert('Not available', 'This Home screen can’t hide apps.');
+    }
+  };
+  const asleepNote = (n: number) =>
+    `${n === 1 ? `${asleep[0]?.label ?? '1 game'} is` : `${n} games (${asleep.slice(0, 2).map(g => g.label).join(', ')}${n > 2 ? '…' : ''}) are`} asleep — Android switches ${n === 1 ? 'it' : 'them'} on when opened, and only the system can change that, so CantosHub can’t hide ${n === 1 ? 'it' : 'them'}. Your Home screen’s Hide apps can.`;
+
+  const hideAll = () => {
+    if (!store.shizuku?.granted) {
+      Alert.alert(
+        'Hide all games',
+        'Hiding them from CantosHub is PRO. Your Home screen can also hide apps itself: on the next screen tap “Hide apps on Home and Apps screens”, select your games and tap Done.\n\nThey still show here in Games, and Play works as usual.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open',
+            onPress: async () => {
+              if (!(await CantosHub.openLauncherHideApps())) {
+                Alert.alert('Not available', 'This Home screen can’t hide apps. Turn on PRO access to hide them from here.');
+              }
+            },
+          },
+        ],
+      );
+      return;
+    }
+    const n = hideable.length;
+    if (!n) {
+      Alert.alert('Hide the rest on your Home screen', asleepNote(asleep.length), [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open', onPress: openHomeHide },
+      ]);
+      return;
+    }
+    Alert.alert(
+      `Hide ${n === 1 ? '1 game' : `${n} games`} from your phone?`,
+      'They disappear from your Home screen and app drawer and open from CantosHub (Games tab, Boost tab and Boost & Play shortcuts). A game running in the background is closed.\n\n' +
+        'While hidden, a game can’t send notifications and the Play Store won’t update it. When you play one it’s switched on until you close it, then CantosHub hides it again.' +
+        (kidsKept ? `\n\n${kidsKept === 1 ? '1 Kids app stays' : `${kidsKept} Kids apps stay`} on the phone so Kids Mode can open ${kidsKept === 1 ? 'it' : 'them'}.` : '') +
+        (asleep.length ? `\n\n${asleepNote(asleep.length)}` : ''),
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Hide',
+          onPress: async () => {
+            setHiding(true);
+            const done = await store.hideGames(hideable.map(g => ({ packageName: g.packageName, label: g.label })));
+            setHiding(false);
+            load(false);
+            if (done.length < n) {
+              Alert.alert('Some games weren’t hidden', `${n - done.length} of ${n} couldn’t be hidden. Check that PRO access is on and try again.`);
+            } else if (asleep.length) {
+              Alert.alert('Hide the rest on your Home screen?', asleepNote(asleep.length), [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Open', onPress: openHomeHide },
+              ]);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const showAllOnPhone = () => {
+    const pkgs = store.hiddenGames.map(h => h.packageName);
+    if (!store.shizuku?.granted) {
+      Alert.alert(
+        'Show all games',
+        'They were hidden with PRO access, which isn’t on right now. Turn it on (Access tab) and try again, or open each game’s App info from its More menu and tap Enable.',
+      );
+      return;
+    }
+    Alert.alert(`Show ${pkgs.length === 1 ? '1 game' : `${pkgs.length} games`} on your phone again?`, 'They come back to your Home screen and app drawer.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Show',
+        onPress: async () => {
+          setHiding(true);
+          const done = await store.showGames(pkgs);
+          setHiding(false);
+          load(false);
+          if (done.length < pkgs.length) {
+            Alert.alert('Some games are still hidden', `${pkgs.length - done.length} of ${pkgs.length} couldn’t be switched back on. Try again, or use App info → Enable.`);
+          }
+        },
+      },
+    ]);
+  };
   const hiddenAsGames: GameInfo[] = store.hiddenGames
     .filter(h => !games.some(g => g.packageName === h.packageName))
     .map(h => ({ packageName: h.packageName, label: h.label, totalTimeMs: 0 }));
@@ -161,6 +268,37 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
             ? 'Showing every launchable app — use this if a game is missing.'
             : 'Apps Android tags as games, plus ones you added. Missing one? Tap ALL APPS, or long-press the CantosHub icon → Add game.'}
         </Text>
+
+        {!showAll && !loading && (onPhone.length > 0 || store.hiddenGames.length > 0) && (
+          <View style={styles.hideBar}>
+            <Text style={styles.hideBarText}>
+              {store.hiddenGames.length
+                ? `${store.hiddenGames.length === 1 ? '1 game is' : `${store.hiddenGames.length} games are`} hidden from your phone and open from here.`
+                : 'Keep your games off the Home screen and app drawer — they open from here.'}
+            </Text>
+            {onPhone.length > 0 && (
+              <View style={styles.hideBarBtn}>
+                <PrimaryButton
+                  title={
+                    !hideable.length
+                      ? 'Hide the rest on your Home screen'
+                      : store.hiddenGames.length
+                        ? `Hide the other ${hideable.length}`
+                        : `Hide all ${hideable.length} from phone`
+                  }
+                  variant="outline"
+                  busy={hiding}
+                  onPress={hideAll}
+                />
+              </View>
+            )}
+            {store.hiddenGames.length > 0 && (
+              <View style={styles.hideBarBtn}>
+                <PrimaryButton title="Show all on phone" variant="outline" busy={hiding} onPress={showAllOnPhone} />
+              </View>
+            )}
+          </View>
+        )}
 
         {usageOff && (
           <Pressable style={styles.notice} onPress={onGoPermissions}>
@@ -234,12 +372,20 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
               const hidden = hiddenSet.has(g.packageName);
               const played = fmtTime(g.totalTimeMs);
               const onPlay = async () => {
-                if (hidden && !(await unhideOrExplain(g))) return;
+                // A hidden game is switched on for this session by launchApp (PRO); without PRO
+                // it can only come back through its App info Enable button.
+                const out = store.hiddenOut.includes(g.packageName);
+                if (hidden && !out && !store.shizuku?.granted) {
+                  await unhideOrExplain(g);
+                  return;
+                }
                 // Same as the Dashboard: in Auto mode just make sure Auto is watching (a manual
                 // boost here used to end Auto while the app still said Auto).
                 if (profile && !store.autoMode) await store.boostGame(profile);
                 else if (store.autoMode && !store.boostRunning) await store.startBoost();
-                await CantosHub.launchApp(g.packageName);
+                const opened = await CantosHub.launchApp(g.packageName);
+                if (hidden) store.refreshHiddenOut();
+                if (!opened && hidden) await unhideOrExplain(g);
               };
               return (
                 <View key={g.packageName} style={[styles.gameRow, i > 0 && styles.gameRowDivider]}>
@@ -357,7 +503,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 onPress={async () => {
                   const g = moreFor;
                   setMoreFor(null);
-                  if (g) await unhideOrExplain(g);
+                  if (g && (await unhideOrExplain(g))) load(false);
                 }}
               />
             ) : (
@@ -388,9 +534,22 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                     );
                     return;
                   }
-                  const ok = await store.hideGame({ packageName: g.packageName, label: g.label });
-                  if (!ok) {
-                    Alert.alert('Could not hide', 'Shizuku didn’t complete the request.');
+                  if (g.sleeping) {
+                    Alert.alert(
+                      `Hide ${g.label}`,
+                      `${g.label} is asleep — Android switches it on when it’s opened, and only the system can change that, so CantosHub can’t hide it. On the next screen tap “Hide apps on Home and Apps screens” and select it.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Open', onPress: openHomeHide },
+                      ],
+                    );
+                    return;
+                  }
+                  const done = await store.hideGames([{ packageName: g.packageName, label: g.label }]);
+                  if (!done.length) {
+                    Alert.alert('Could not hide', 'PRO access didn’t complete the request. Try again.');
+                  } else {
+                    load(false);
                   }
                 }}
               />
@@ -657,6 +816,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   noticeText: { color: colors.warn, fontSize: 12 },
+  hideBar: {
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  hideBarText: { color: colors.textDim, fontSize: 13, lineHeight: 19 },
+  hideBarBtn: { marginTop: spacing.sm },
   empty: { color: colors.textDim, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
 
   list: {

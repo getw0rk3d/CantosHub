@@ -1,7 +1,6 @@
 package com.cantoshub
 
 import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
 
 /**
@@ -34,16 +33,12 @@ class BoostShortcutActivity : Activity() {
     } catch (e: Exception) {
     }
 
-    if (!launchPkg.isNullOrEmpty()) {
-      try {
-        packageManager.getLaunchIntentForPackage(launchPkg)?.let {
-          it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          startActivity(it)
-        }
-      } catch (e: Exception) {
-      }
+    if (launchPkg.isNullOrEmpty()) {
+      finish()
+      return
     }
-
-    finish()
+    // A game hidden by CantosHub is switched on first: stay (invisible) until it's opened,
+    // since a background app may not start activities.
+    HiddenApps.launch(this, launchPkg) { finish() }
   }
 }

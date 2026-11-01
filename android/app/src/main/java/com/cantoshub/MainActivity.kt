@@ -23,6 +23,7 @@ class MainActivity : ReactActivity() {
   override fun onResume() {
     super.onResume()
     resumed = true
+    HiddenApps.rehideClosed(this) // back from a hidden game: hide it again once it has closed
   }
 
   override fun onPause() {

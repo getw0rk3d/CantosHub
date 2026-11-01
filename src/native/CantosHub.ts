@@ -57,7 +57,8 @@ export type BoostProfile = {
 /** CantosHub's own Wireless debugging connection (no Shizuku app). */
 export type BuiltInShell = {
   paired: boolean; // paired once with Wireless debugging
-  connected: boolean; // connected now: PRO features work
+  connected: boolean; // connected right now (only while CantosHub is running commands)
+  ready: boolean; // PRO features work: connected, or able to connect when needed (on Wi-Fi)
   devOptions: boolean; // Developer options are on
   wireless: boolean; // Wireless debugging is on
   wifi: boolean; // on Wi-Fi now (Wireless debugging needs it)

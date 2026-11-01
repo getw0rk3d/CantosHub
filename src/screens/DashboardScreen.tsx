@@ -308,6 +308,16 @@ export default function DashboardScreen({
         </Pressable>
       )}
 
+      {/* Built-in PRO access rides on Wireless debugging, which Android only runs on Wi-Fi. */}
+      {!!store.shizuku?.builtIn?.paired && !store.shizuku.granted && !store.shizuku.builtIn.wifi && (
+        <Pressable style={styles.notice} onPress={onGoPermissions}>
+          <Text style={styles.noticeText}>
+            PRO access is paused: no Wi-Fi. It comes back by itself on Wi-Fi. Playing on mobile
+            data? Use Shizuku — tap to see how.
+          </Text>
+        </Pressable>
+      )}
+
       {!CantosHub.isNativeAvailable && (
         <View style={styles.notice}>
           <Text style={styles.noticeText}>

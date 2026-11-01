@@ -102,7 +102,7 @@ class KidsService : Service() {
       // the kids Home off once a new default exists (CantosHubModule.kidsGetConfig).
       if (!(KidsPrefs.tookHome(ctx) && homeRoleHeld(ctx))) setHomeAliasEnabled(ctx, false)
       if (ShizukuManager.canRun()) {
-        releaseBar(ctx, force = true)   // force: a lock applied by 1.3.4 or older left no flag
+        releaseBar(ctx) // only when Kids lock really switched the bar off (not on every app start)
         val prev = KidsPrefs.prevHome(ctx)
         if (prev.isNotEmpty()) {
           ShizukuManager.exec(ctx, listOf("cmd", "package", "set-home-activity", prev)) { }
@@ -117,8 +117,8 @@ class KidsService : Service() {
      * this can't be done, so the flag stays set and it's retried when Shizuku comes back
      * (MainApplication), when it's granted, and whenever the app reads the Kids settings.
      */
-    fun releaseBar(ctx: Context, force: Boolean = false) {
-      if (!(force || KidsPrefs.barLocked(ctx)) || KidsPrefs.isActive(ctx) || !ShizukuManager.canRun()) return
+    fun releaseBar(ctx: Context) {
+      if (!KidsPrefs.barLocked(ctx) || KidsPrefs.isActive(ctx) || !ShizukuManager.canRun()) return
       ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { out ->
         if (out != null && !out.startsWith("ERR") && !KidsPrefs.isActive(ctx)) KidsPrefs.setBarLocked(ctx, false)
       }
@@ -217,9 +217,9 @@ class KidsService : Service() {
     return START_STICKY
   }
 
-  /** A shell became available while Kids Mode is on (e.g. reconnected after a restart). */
+  /** A shell became available while Kids Mode is on and the top bar isn't locked yet. */
   fun reapplyLock() {
-    if (isRunning && KidsPrefs.isActive(this)) handler?.post { applySystemLock() }
+    if (isRunning && KidsPrefs.isActive(this) && !KidsPrefs.barLocked(this)) handler?.post { applySystemLock() }
   }
 
   private fun applySystemLock() {

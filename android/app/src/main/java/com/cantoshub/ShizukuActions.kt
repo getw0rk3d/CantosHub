@@ -83,7 +83,10 @@ object ShizukuActions {
     ShizukuManager.submit(ctx, { sh -> sh != null && applyNow(ctx, sh, profile) }, cb)
 
   fun revert(ctx: Context, cb: (Boolean) -> Unit) =
-    ShizukuManager.submit(ctx, { sh -> revertNow(ctx, sh) }, cb)
+    ShizukuManager.submit(ctx, { sh -> revertNow(ctx, sh) }, cb) {
+      // Nothing recorded (the usual case at app start): don't connect just to find that out.
+      suspendedList(ctx).isNotEmpty() || ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_RES_CHANGED, false)
+    }
 
   private fun applyNow(ctx: Context, sh: ShizukuManager.Shell, profile: JSONObject): Boolean {
     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -671,6 +671,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       val b = Arguments.createMap()
       b.putBoolean("paired", AdbShell.isPaired(ctx))
       b.putBoolean("connected", AdbShell.isConnected())
+      b.putBoolean("ready", AdbShell.ready())
       b.putBoolean("devOptions", AdbShell.devOptionsOn(ctx))
       b.putBoolean("wireless", AdbShell.wirelessOn(ctx))
       b.putBoolean("wifi", AdbShell.onWifi(ctx))

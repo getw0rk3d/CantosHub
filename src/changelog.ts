@@ -4,6 +4,9 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.6':
+    '• Fewer “Wireless debugging connected” pop-ups: built-in PRO access now connects only while CantosHub is actually doing something and lets go about a minute later, instead of reconnecting after every Wi-Fi blip. (Android shows that alert itself and doesn’t let apps or you silence it.)' +
+    '\n• Playing on mobile data? The PRO access screen now explains it: the built-in connection works on Wi-Fi, and the Shizuku app keeps PRO working on 5G once you start it on Wi-Fi. The Boost tab tells you when PRO is paused because there’s no Wi-Fi.',
   '1.3.5':
     '• NEW: PRO access without the Shizuku app. In Access → Set up PRO access, CantosHub pairs once with your phone’s Wireless debugging (type the code in its notification). After a restart it turns Wireless debugging back on and reconnects by itself whenever you’re on Wi-Fi. Shizuku still works if you use it.' +
     '\n• Security: other apps can no longer start a boost through CantosHub (they could freeze apps or change your resolution with CantosHub’s Shizuku access). Home-screen shortcuts and the Quick tile now always use your profiles as they are today.' +

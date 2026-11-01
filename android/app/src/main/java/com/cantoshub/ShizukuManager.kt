@@ -61,18 +61,19 @@ object ShizukuManager {
     false
   }
 
-  fun isAvailable(): Boolean = shizukuRunning() || AdbShell.isConnected()
+  fun isAvailable(): Boolean = shizukuRunning() || AdbShell.ready()
 
   /**
    * A shell is ready for PRO features: Shizuku (granted) or CantosHub's own Wireless
-   * debugging connection (AdbShell). Shizuku wins when both are there.
+   * debugging connection (AdbShell; it connects when a command needs it). Shizuku wins when
+   * both are there.
    */
-  fun hasPermission(): Boolean = shizukuGranted() || AdbShell.isConnected()
+  fun hasPermission(): Boolean = shizukuGranted() || AdbShell.ready()
 
   /** Which one runs the commands: "shizuku", "builtin" or null. */
   fun via(): String? = when {
     shizukuGranted() -> "shizuku"
-    AdbShell.isConnected() -> "builtin"
+    AdbShell.ready() -> "builtin"
     else -> null
   }
 
@@ -214,11 +215,13 @@ object ShizukuManager {
    * separate callbacks the two used to cross: on an Auto game-to-game switch the old game's
    * revert wiped the new game's freeze record, leaving those apps frozen for good.
    */
-  fun <T> submit(ctx: Context, job: (Shell?) -> T, cb: (T) -> Unit) {
+  fun <T> submit(ctx: Context, job: (Shell?) -> T, cb: (T) -> Unit, needsShell: () -> Boolean = { true }) {
     val replyTo = Handler(Looper.myLooper() ?: Looper.getMainLooper())
     worker.execute {
       val result = try {
-        job(awaitShell(ctx)?.let { Shell(it) })
+        // Checked here, in queue order: no shell (and no connection) for a job with nothing
+        // to do - the built-in one pops Android's alert every time it connects.
+        job(if (needsShell()) awaitShell(ctx)?.let { Shell(it) } else null)
       } catch (e: Exception) {
         return@execute
       }

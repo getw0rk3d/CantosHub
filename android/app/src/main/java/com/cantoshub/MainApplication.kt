@@ -29,28 +29,40 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
-    // Shizuku came back (or was already running), or the built-in connection is up.
+    AdbShell.init(this)
+    // Shizuku came back (or was already running).
     try {
       Shizuku.addBinderReceivedListenerSticky { onShellReady(this) }
     } catch (e: Exception) { }
-    if (AdbShell.isPaired(this)) {
-      AdbShell.connectAsync(this, force = true) { onShellReady(this) }
-      watchWifi()
-    }
+    // The built-in connection isn't opened here: it connects only when a command needs it
+    // (each connection pops Android's "Wireless debugging connected" alert). Only work that's
+    // owed - a stuck top bar, a boost's leftovers - runs now, and that connects by itself.
+    if (AdbShell.isPaired(this)) onShellReady(this)
+    watchWifi()
   }
 
   /**
-   * Wireless debugging switches itself off when Wi-Fi drops; when Wi-Fi is back (and the
-   * app is alive) CantosHub switches it on again and reconnects.
+   * Wireless debugging switches itself off when Wi-Fi drops. When Wi-Fi comes back, catch up
+   * on owed work only - not a reconnect on every Wi-Fi blip (mesh roaming made the alert pop
+   * again and again).
    */
   private fun watchWifi() {
     try {
       val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
       cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+        private var onWifi = AdbShell.onWifi(this@MainApplication)
+
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-          if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !AdbShell.isConnected()) {
-            AdbShell.connectAsync(this@MainApplication) { onShellReady(this@MainApplication) }
-          }
+          val wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+          val paired = AdbShell.isPaired(this@MainApplication)
+          if (paired && wifi && !onWifi) onShellReady(this@MainApplication)
+          if (paired && wifi != onWifi) AdbShell.onChange?.invoke() // the app's PRO status follows
+          onWifi = wifi
+        }
+
+        override fun onLost(network: Network) {
+          if (onWifi) AdbShell.onChange?.invoke()
+          onWifi = false
         }
       })
     } catch (e: Exception) { }
@@ -64,8 +76,10 @@ class MainApplication : Application(), ReactApplication {
      */
     fun onShellReady(ctx: Context) {
       KidsService.releaseBar(ctx)
+      KidsService.restorePip(ctx)
       BoostService.undoLeftovers(ctx)
       KidsService.instance?.reapplyLock()
+      HiddenApps.rehideClosed(ctx)
     }
   }
 }

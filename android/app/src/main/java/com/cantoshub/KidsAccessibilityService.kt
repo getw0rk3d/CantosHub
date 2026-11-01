@@ -11,13 +11,15 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * Optional Kids Mode helper that needs no Shizuku (so it works on mobile data, where
  * Shizuku's wireless debugging can't start). Idle unless Kids Mode is on. It:
  * - tells [KidsService] about every window change right away (no polling delay),
- * - closes the notification shade and Samsung Wallet's swipe-up card,
+ * - closes the notification shade, Samsung Wallet's swipe-up card and floating
+ *   picture-in-picture videos,
  * - brings the kids screen back. Android always lets an accessibility service open an
  *   activity, so this works even when a background start would be blocked.
  */
@@ -53,7 +55,29 @@ class KidsAccessibilityService : AccessibilityService() {
         guardShade()
         KidsService.instance?.checkSoon()
       }
-      AccessibilityEvent.TYPE_WINDOWS_CHANGED -> guardShade()
+      AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+        guardShade()
+        closePip()
+      }
+    }
+  }
+
+  /**
+   * A kids video app went picture-in-picture (without PRO it can't be switched off): close the
+   * floating video, which also stops it. Android's PiP window has a Dismiss action for this.
+   * Not during a call - that could be a video call with grandma.
+   */
+  fun closePip() {
+    main.post {
+      if (!KidsPrefs.isActive(this) || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return@post
+      if (KidsService.isCallActive(this)) return@post
+      try {
+        for (w in windows) {
+          if (!w.isInPictureInPictureMode) continue
+          w.root?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS.id)
+        }
+      } catch (e: Exception) {
+      }
     }
   }
 

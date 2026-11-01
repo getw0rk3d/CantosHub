@@ -40,6 +40,8 @@ export default function ShizukuSetup({
 
   const status = shizuku?.granted
     ? { text: 'ON', color: colors.accent }
+    : b?.paired && !b.wifi
+    ? { text: 'PAUSED · NO WI-FI', color: colors.warn }
     : b?.paired
     ? { text: 'NOT CONNECTED', color: colors.warn }
     : { text: 'OFF', color: colors.textDim };
@@ -70,17 +72,24 @@ export default function ShizukuSetup({
               {shizuku.via !== 'shizuku' && (
                 <Text style={styles.doneSub}>
                   {b?.autoStart
-                    ? 'After a restart CantosHub turns Wireless debugging back on and reconnects by itself whenever you’re on Wi-Fi.'
-                    : 'After a restart, turn Wireless debugging on again and tap Reconnect here.'}
+                    ? 'Works on Wi-Fi. CantosHub connects only while it’s doing something, so Android’s “Wireless debugging connected” alert shows then and goes away about a minute later. After a restart it turns Wireless debugging back on by itself.'
+                    : 'Works on Wi-Fi. After a restart, turn Wireless debugging on again and tap Reconnect here.'}
                 </Text>
               )}
+            </View>
+          ) : b?.paired && !b.wifi ? (
+            <View style={styles.pausedCard}>
+              <Text style={styles.pausedText}>PRO access is paused: no Wi-Fi</Text>
+              <Text style={styles.doneSub}>
+                The built-in connection uses Wireless debugging, which Android only runs on Wi-Fi.
+                It comes back by itself when you’re on Wi-Fi again. For PRO on mobile data, use
+                Shizuku (below).
+              </Text>
             </View>
           ) : b?.paired ? (
             <Step n={1} title="Reconnect">
               <Text style={styles.stepText}>
-                {b.wifi
-                  ? 'CantosHub is paired. Tap Reconnect — it turns Wireless debugging on and connects.'
-                  : 'Connect to Wi-Fi first: Wireless debugging only works on Wi-Fi (any network, no internet needed).'}
+                CantosHub is paired. Tap Reconnect — it turns Wireless debugging on and connects.
               </Text>
               <View style={styles.stepBtn}>
                 <PrimaryButton
@@ -135,33 +144,31 @@ export default function ShizukuSetup({
             </>
           )}
 
-          {shizuku?.via !== 'builtin' && (
-            <View style={styles.alt}>
-              <Text style={styles.altTitle}>Or use the Shizuku app</Text>
-              <Text style={styles.altText}>
-                {shizuku?.shizukuGranted
-                  ? 'Shizuku is running and CantosHub is allowed.'
-                  : shizuku?.shizukuRunning
-                  ? 'Shizuku is running — allow CantosHub in it.'
-                  : 'If you already use Shizuku, start it and allow CantosHub. Get it from GitHub or F-Droid (not the Play Store build, it’s outdated).'}
-              </Text>
-              {!shizuku?.shizukuGranted && (
-                <View style={styles.stepBtn}>
-                  <PrimaryButton
-                    title={shizuku?.shizukuRunning ? 'Allow CantosHub in Shizuku' : 'Get Shizuku (GitHub)'}
-                    variant="outline"
-                    onPress={() =>
-                      shizuku?.shizukuRunning
-                        ? store.requestShizuku()
-                        : Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
-                    }
-                  />
-                </View>
-              )}
-            </View>
-          )}
+          <View style={styles.alt}>
+            <Text style={styles.altTitle}>Playing on mobile data? Use Shizuku</Text>
+            <Text style={styles.altText}>
+              {shizuku?.shizukuGranted
+                ? 'Shizuku is running and CantosHub is using it — PRO keeps working on mobile data until the phone restarts.'
+                : shizuku?.shizukuRunning
+                ? 'Shizuku is running — allow CantosHub in it.'
+                : 'The built-in connection only works on Wi-Fi. The Shizuku app also starts on Wi-Fi, but once started it keeps PRO working on mobile data until the phone restarts — start it before you leave. CantosHub uses it automatically. Get it from GitHub or F-Droid (not the Play Store build, it’s outdated).'}
+            </Text>
+            {!shizuku?.shizukuGranted && (
+              <View style={styles.stepBtn}>
+                <PrimaryButton
+                  title={shizuku?.shizukuRunning ? 'Allow CantosHub in Shizuku' : 'Get Shizuku (GitHub)'}
+                  variant="outline"
+                  onPress={() =>
+                    shizuku?.shizukuRunning
+                      ? store.requestShizuku()
+                      : Linking.openURL('https://github.com/RikkaApps/Shizuku/releases/latest')
+                  }
+                />
+              </View>
+            )}
+          </View>
 
-          <View style={{ height: spacing.lg }}>
+          <View style={{ marginTop: spacing.lg }}>
             <PrimaryButton title="Close" variant="outline" onPress={onClose} />
           </View>
         </ScrollView>
@@ -215,6 +222,15 @@ const styles = StyleSheet.create({
   },
   doneText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
   doneSub: { color: colors.textDim, fontSize: 13, lineHeight: 19, marginTop: spacing.sm },
+  pausedCard: {
+    backgroundColor: 'rgba(255,176,32,0.10)',
+    borderColor: colors.warn,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  pausedText: { color: colors.warn, fontSize: 15, fontWeight: '700' },
   live: { color: colors.accent2, fontSize: 14, fontWeight: '700', lineHeight: 20, marginTop: spacing.md },
 
   step: {

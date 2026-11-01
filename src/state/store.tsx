@@ -114,10 +114,18 @@ type Store = {
   toggleGameInFolder: (folderId: string, packageName: string) => void;
 
   hiddenGames: HiddenGame[];
-  hideGame: (game: HiddenGame) => Promise<boolean>;
-  unhideGame: (packageName: string) => Promise<boolean>;
+  /** Hide games from the phone (PRO); resolves the package names now hidden. */
+  hideGames: (games: HiddenGame[]) => Promise<string[]>;
+  /** Show hidden games on the phone again for good (PRO); resolves the ones that are back. */
+  showGames: (packageNames: string[]) => Promise<string[]>;
   /** Drop "hidden" records for games that are visible again (re-enabled outside CantosHub). */
   forgetHidden: (packageNames: string[]) => void;
+  /**
+   * Hidden games switched on for now because they were opened from CantosHub: they look
+   * installed again but stay hidden (CantosHub hides them again once they've closed).
+   */
+  hiddenOut: string[];
+  refreshHiddenOut: () => Promise<string[]>;
 
   /** Apps the user added to Games (Android doesn't tag them as games). */
   addedGames: HiddenGame[];
@@ -187,6 +195,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [freeRamOnBoost, setFreeRamOnBoost] = useState(true);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [hiddenGames, setHiddenGames] = useState<HiddenGame[]>([]);
+  const [hiddenOut, setHiddenOut] = useState<string[]>([]);
   const [addedGames, setAddedGames] = useState<HiddenGame[]>([]);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
@@ -361,16 +370,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const hideGame = useCallback(async (game: HiddenGame): Promise<boolean> => {
-    const ok = await CantosHub.hideApp(game.packageName);
-    if (ok) {
-      setHiddenGames(prev =>
-        prev.some(h => h.packageName === game.packageName)
-          ? prev
-          : [...prev, { packageName: game.packageName, label: game.label }],
-      );
+  const hideGames = useCallback(async (games: HiddenGame[]): Promise<string[]> => {
+    const done = await CantosHub.hideApps(games.map(g => g.packageName));
+    if (done.length) {
+      setHiddenGames(prev => [
+        ...prev,
+        ...games
+          .filter(g => done.includes(g.packageName) && !prev.some(h => h.packageName === g.packageName))
+          .map(g => ({ packageName: g.packageName, label: g.label })),
+      ]);
+      setHiddenOut(prev => prev.filter(p => !done.includes(p)));
     }
-    return ok;
+    return done;
   }, []);
 
   const addGames = useCallback((apps: HiddenGame[]) => {
@@ -388,13 +399,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const forgetHidden = useCallback((packageNames: string[]) => {
     if (!packageNames.length) return;
+    CantosHub.forgetHidden(packageNames).catch(() => {});
     setHiddenGames(prev => prev.filter(h => !packageNames.includes(h.packageName)));
   }, []);
 
-  const unhideGame = useCallback(async (packageName: string): Promise<boolean> => {
-    const ok = await CantosHub.unhideApp(packageName);
-    if (ok) setHiddenGames(prev => prev.filter(h => h.packageName !== packageName));
-    return ok;
+  const showGames = useCallback(async (packageNames: string[]): Promise<string[]> => {
+    const done = await CantosHub.showApps(packageNames);
+    if (done.length) {
+      setHiddenGames(prev => prev.filter(h => !done.includes(h.packageName)));
+      setHiddenOut(prev => prev.filter(p => !done.includes(p)));
+    }
+    return done;
+  }, []);
+
+  const hiddenRef = useRef(hiddenGames);
+  hiddenRef.current = hiddenGames;
+  const refreshHiddenOut = useCallback(async (): Promise<string[]> => {
+    try {
+      const { out } = await CantosHub.hiddenState(hiddenRef.current.map(h => h.packageName));
+      setHiddenOut(out);
+      return out;
+    } catch {
+      return [];
+    }
   }, []);
 
   const deleteProfile = useCallback(
@@ -668,9 +695,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     deleteFolder,
     toggleGameInFolder,
     hiddenGames,
-    hideGame,
-    unhideGame,
+    hideGames,
+    showGames,
     forgetHidden,
+    hiddenOut,
+    refreshHiddenOut,
     addedGames,
     addGames,
     removeAddedGame,

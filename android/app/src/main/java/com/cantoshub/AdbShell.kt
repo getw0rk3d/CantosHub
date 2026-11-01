@@ -43,12 +43,25 @@ object AdbShell {
   private const val EXIT_MARK = "__CANTOSHUB_EXIT="
   private const val RETRY_AFTER_MS = 30_000L
 
+  // Let go of Wireless debugging this long after the last command. While CantosHub is
+  // connected Android shows its own "Wireless debugging connected" alert (it can't be made
+  // silent), so the connection only lives while CantosHub is actually doing something.
+  private const val IDLE_MS = 60_000L
+
   private val lock = Any()
+  private val connectLock = Any()
   private var manager: Manager? = null
-  @Volatile private var lastTry = 0L
+  @Volatile private var lastFail = 0L
+  @Volatile private var appCtx: Context? = null
+  private var idleClose: java.util.concurrent.ScheduledFuture<*>? = null
 
   /** Told when the connection comes or goes (the app refreshes its PRO status). */
   @Volatile var onChange: (() -> Unit)? = null
+
+  /** From Application.onCreate, so the status checks below can read settings. */
+  fun init(ctx: Context) {
+    appCtx = ctx.applicationContext
+  }
 
   private class Manager(ctx: Context) : AbsAdbConnectionManager() {
     private val key: PrivateKey
@@ -111,15 +124,26 @@ object AdbShell {
   }
 
   /**
-   * Blocking: connect if paired and not connected yet. Switches Wireless debugging on first
-   * when it's off and CantosHub may (Wi-Fi only). Tries at most every 30 s unless [force].
+   * Built-in PRO can run now: connected, or paired and able to connect on demand (on Wi-Fi,
+   * Wireless debugging on or CantosHub allowed to switch it on, and no failed try just now).
    */
-  fun connect(ctx: Context, force: Boolean = false, timeoutMs: Long = 8_000): Boolean {
+  fun ready(): Boolean {
+    if (isConnected()) return true
+    val c = appCtx ?: return false
+    return isPaired(c) && onWifi(c) && (wirelessOn(c) || canAutoStart(c)) &&
+      System.currentTimeMillis() - lastFail > RETRY_AFTER_MS
+  }
+
+  /**
+   * Blocking: connect if paired and not connected yet - only when a command needs it, one try
+   * at a time (two at once each made a connection, and each connection pops Android's alert).
+   * Switches Wireless debugging on first when it's off and CantosHub may (Wi-Fi only). After a
+   * failed try, waits 30 s before the next unless [force].
+   */
+  fun connect(ctx: Context, force: Boolean = false, timeoutMs: Long = 8_000): Boolean = synchronized(connectLock) {
     if (isConnected()) return true
     if (!isPaired(ctx)) return false
-    val now = System.currentTimeMillis()
-    if (!force && now - lastTry < RETRY_AFTER_MS) return false
-    lastTry = now
+    if (!force && System.currentTimeMillis() - lastFail < RETRY_AFTER_MS) return false
     if (!wirelessOn(ctx)) {
       if (!canAutoStart(ctx) || !onWifi(ctx)) return false
       try {
@@ -138,20 +162,14 @@ object AdbShell {
     } catch (e: Exception) {
       false
     }
+    lastFail = if (ok) 0L else System.currentTimeMillis()
     if (ok) {
       // So next time (a restart, Wi-Fi back) CantosHub can switch Wireless debugging on itself.
       if (!canAutoStart(ctx)) exec(ctx, listOf("pm", "grant", ctx.packageName, "android.permission.WRITE_SECURE_SETTINGS"))
+      scheduleIdleClose()
       onChange?.invoke()
     }
-    return ok
-  }
-
-  /** Connect in the background (app start, boot, Wi-Fi back), then let the app catch up. */
-  fun connectAsync(ctx: Context, force: Boolean = false, then: (() -> Unit)? = null) {
-    val app = ctx.applicationContext
-    Thread {
-      if (connect(app, force)) then?.invoke()
-    }.apply { isDaemon = true }.start()
+    ok
   }
 
   fun disconnect() {
@@ -160,6 +178,21 @@ object AdbShell {
     } catch (e: Exception) {
     }
     onChange?.invoke()
+  }
+
+  /**
+   * (Re)start the idle countdown; the connection closes [IDLE_MS] after the last command. Not
+   * during Kids Mode: it runs commands now and then (closing a video app the kid left), and
+   * each reconnect popped the alert over the kid's screen.
+   */
+  private fun scheduleIdleClose() {
+    synchronized(lock) {
+      idleClose?.cancel(false)
+      idleClose = timer.schedule({
+        val kids = appCtx?.let { KidsPrefs.isActive(it) } == true
+        if (kids) scheduleIdleClose() else if (isConnected()) disconnect()
+      }, IDLE_MS, TimeUnit.MILLISECONDS)
+    }
   }
 
   /**
@@ -191,6 +224,7 @@ object AdbShell {
       if (at < 0) return null // cut off (timed out or the connection dropped)
       val code = text.substring(at + EXIT_MARK.length).trim().toIntOrNull() ?: 0
       val out = text.substring(0, at).trim()
+      scheduleIdleClose()
       if (code != 0) "ERR: $out" else out
     } catch (e: Exception) {
       // The connection broke (Wireless debugging off, Wi-Fi gone): reconnect next time.

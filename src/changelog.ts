@@ -4,6 +4,14 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.6':
+    '• NEW: Hide all games (Games tab, PRO). One tap takes your games off the Home screen and app drawer so they live in CantosHub. Play one and it’s switched on until you close it, then hidden again. Show all on phone brings them back.' +
+    '\n• Kids Mode: YouTube and other video apps no longer float picture-in-picture over the kids screen, and they close when your kid leaves them (PRO; with Kids lock alone a floating video is closed).' +
+    '\n• Kids Mode: when you unlock, the apps your kid used are closed and cleared from Recents (PRO).' +
+    '\n• Fixed: unlocking Kids Mode made the Samsung Wallet card slide up by itself.' +
+    '\n• Fewer “Wireless debugging connected” pop-ups: built-in PRO access now connects only while CantosHub is actually doing something and lets go about a minute later, instead of reconnecting after every Wi-Fi blip. (Android shows that alert itself and doesn’t let apps or you silence it.)' +
+    '\n• Playing on mobile data? The PRO access screen now explains it: the built-in connection works on Wi-Fi, and the Shizuku app keeps PRO working on 5G once you start it on Wi-Fi. The Boost tab tells you when PRO is paused because there’s no Wi-Fi.' +
+    '\n• Fixed: the Close button on the PRO access screen showed no text.',
   '1.3.5':
     '• NEW: PRO access without the Shizuku app. In Access → Set up PRO access, CantosHub pairs once with your phone’s Wireless debugging (type the code in its notification). After a restart it turns Wireless debugging back on and reconnects by itself whenever you’re on Wi-Fi. Shizuku still works if you use it.' +
     '\n• Security: other apps can no longer start a boost through CantosHub (they could freeze apps or change your resolution with CantosHub’s Shizuku access). Home-screen shortcuts and the Quick tile now always use your profiles as they are today.' +

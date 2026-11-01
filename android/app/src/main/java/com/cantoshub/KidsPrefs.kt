@@ -21,6 +21,8 @@ object KidsPrefs {
   private const val KEY_PIN_FAILS = "pin_fails"
   private const val KEY_PIN_WAIT_UNTIL = "pin_wait_until"
   private const val KEY_BAR_LOCKED = "bar_locked"
+  private const val KEY_USED = "used"
+  private const val KEY_PIP_RESTORE = "pip_restore"
 
   // Wrong PINs: the first few are free (small kids mash keys), then the pad waits 30 s,
   // doubling each time up to 15 min. The phone's own lock still unlocks meanwhile.
@@ -108,4 +110,21 @@ object KidsPrefs {
   fun setBarLocked(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_BAR_LOCKED, v).commit()
 
   fun systemAllowed(ctx: Context) = System.currentTimeMillis() < sp(ctx).getLong(KEY_SYSTEM_UNTIL, 0L)
+
+  /** Kids apps opened since Kids Mode started; closed and cleared from Recents on unlock (PRO). */
+  fun used(ctx: Context): Set<String> =
+    (sp(ctx).getString(KEY_USED, "") ?: "").split(",").filter { it.isNotBlank() }.toSet()
+  fun setUsed(ctx: Context, pkgs: Set<String>) = sp(ctx).edit().putString(KEY_USED, pkgs.joinToString(",")).commit()
+
+  /**
+   * Picture-in-picture Kids Mode switched off, as package to its previous app-op mode
+   * ("default", "allow", ...), so exactly that can be put back afterwards.
+   */
+  fun pipRestore(ctx: Context): Map<String, String> =
+    (sp(ctx).getString(KEY_PIP_RESTORE, "") ?: "").split(",").mapNotNull {
+      val (p, m) = it.split("=").takeIf { kv -> kv.size == 2 } ?: return@mapNotNull null
+      p to m
+    }.toMap()
+  fun setPipRestore(ctx: Context, m: Map<String, String>) =
+    sp(ctx).edit().putString(KEY_PIP_RESTORE, m.entries.joinToString(",") { "${it.key}=${it.value}" }).commit()
 }

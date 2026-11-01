@@ -252,6 +252,10 @@ export default function DashboardScreen({
   // Bound games first, then most-played — the quick-launch row (max 4).
   const bound = store.profiles.filter(p => p.packageName);
   const byPkg = new Map(games.map(g => [g.packageName, g]));
+  // Games hidden from the phone aren't listed by Android but still play from here.
+  for (const h of store.hiddenGames) {
+    if (!byPkg.has(h.packageName)) byPkg.set(h.packageName, { ...h, totalTimeMs: 0 });
+  }
   const quick: { pkg: string; label: string }[] = [];
   for (const p of bound) {
     const g = byPkg.get(p.packageName as string);
@@ -305,6 +309,16 @@ export default function DashboardScreen({
             <Text style={styles.updateNotes}>{store.update.notes}</Text>
           )}
           {!installing && <Text style={styles.updateCta}>Tap to install</Text>}
+        </Pressable>
+      )}
+
+      {/* Built-in PRO access rides on Wireless debugging, which Android only runs on Wi-Fi. */}
+      {!!store.shizuku?.builtIn?.paired && !store.shizuku.granted && !store.shizuku.builtIn.wifi && (
+        <Pressable style={styles.notice} onPress={onGoPermissions}>
+          <Text style={styles.noticeText}>
+            PRO access is paused: no Wi-Fi. It comes back by itself on Wi-Fi. Playing on mobile
+            data? Use Shizuku — tap to see how.
+          </Text>
         </Pressable>
       )}
 

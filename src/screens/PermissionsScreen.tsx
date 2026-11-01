@@ -154,7 +154,7 @@ export default function PermissionsScreen() {
         right={
           shizuku ? (
             <Badge
-              text={shizuku.granted ? 'ON' : shizuku.builtIn?.paired || shizuku.available ? 'NOT CONNECTED' : 'OFF'}
+              text={shizuku.granted ? 'ON' : shizuku.builtIn?.paired && !shizuku.builtIn.wifi ? 'PAUSED · NO WI-FI' : shizuku.builtIn?.paired || shizuku.available ? 'NOT CONNECTED' : 'OFF'}
               color={shizuku.granted ? colors.accent : shizuku.builtIn?.paired || shizuku.available ? colors.warn : colors.textDim}
             />
           ) : undefined
@@ -180,8 +180,8 @@ export default function PermissionsScreen() {
           <Text key={t} style={styles.step}>•  {t}</Text>
         ))}
         <Text style={[styles.note, { marginTop: spacing.sm }]}>
-          Wireless debugging needs Wi-Fi. After a restart CantosHub turns it back on and
-          reconnects by itself whenever you’re on Wi-Fi.
+          The built-in connection works on Wi-Fi (Wireless debugging). Playing on mobile data?
+          The Shizuku app keeps PRO working there once you start it on Wi-Fi.
         </Text>
 
         {shizuku?.granted ? (

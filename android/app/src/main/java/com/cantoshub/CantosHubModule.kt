@@ -24,6 +24,7 @@ import android.app.Activity
 import android.app.KeyguardManager
 import android.app.role.RoleManager
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -297,6 +298,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       !Settings.canDrawOverlays(ctx) -> promise.resolve("NO_OVERLAY")
       !hasUsageAccess() -> promise.resolve("NO_USAGE")
       else -> {
+        KidsPrefs.setUsed(ctx, emptySet())
         KidsPrefs.setActive(ctx, true)
         KidsService.start(ctx)
         promise.resolve("OK")
@@ -473,6 +475,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
 
   private fun stopKidsNow() {
     KidsPrefs.setActive(ctx, false)
+    KidsService.closeUsedApps(ctx)
     KidsService.stop(ctx)
     KidsService.releaseSystemLock(ctx) // also covers a service that already died
   }
@@ -671,6 +674,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       val b = Arguments.createMap()
       b.putBoolean("paired", AdbShell.isPaired(ctx))
       b.putBoolean("connected", AdbShell.isConnected())
+      b.putBoolean("ready", AdbShell.ready())
       b.putBoolean("devOptions", AdbShell.devOptionsOn(ctx))
       b.putBoolean("wireless", AdbShell.wirelessOn(ctx))
       b.putBoolean("wifi", AdbShell.onWifi(ctx))
@@ -774,6 +778,26 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         m.putString("packageName", pkg)
         m.putString("label", ri.loadLabel(pm).toString())
         m.putDouble("totalTimeMs", (usage[pkg] ?: 0L).toDouble())
+        // Asleep until opened (Samsung puts unused apps there): only the system can change that
+        // state, so CantosHub can't hide these - the Home screen's own Hide apps can.
+        val state = try { pm.getApplicationEnabledSetting(pkg) } catch (e: Exception) { -1 }
+        m.putBoolean("sleeping", state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED)
+        arr.pushMap(m)
+      }
+      // Games CantosHub hid are switched off, so Android no longer lists them; they're still
+      // games here, with their playtime.
+      for (pkg in HiddenApps.hidden(ctx)) {
+        if (!seen.add(pkg)) continue
+        val ai = try {
+          pm.getApplicationInfo(pkg, PackageManager.MATCH_DISABLED_COMPONENTS)
+        } catch (e: Exception) {
+          continue // uninstalled meanwhile
+        }
+        val m = Arguments.createMap()
+        m.putString("packageName", pkg)
+        m.putString("label", pm.getApplicationLabel(ai).toString())
+        m.putDouble("totalTimeMs", (usage[pkg] ?: 0L).toDouble())
+        m.putBoolean("hidden", true)
         arr.pushMap(m)
       }
       promise.resolve(arr)
@@ -1088,28 +1112,40 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     }
   }
 
-  /** Hide a game from the launcher via Shizuku (pm disable-user). No root. */
+  /** Hide games from the phone (PRO, pm disable-user; see HiddenApps). Resolves the ones hidden. */
   @ReactMethod
-  fun hideApp(packageName: String, promise: Promise) {
-    if (!ShizukuManager.hasPermission()) {
-      promise.resolve(false)
-      return
-    }
-    ShizukuManager.exec(ctx, listOf("pm", "disable-user", "--user", "0", packageName)) { out ->
-      promise.resolve(out != null && !out.startsWith("ERR"))
+  fun hideApps(packageNames: ReadableArray, promise: Promise) {
+    HiddenApps.hide(ctx, packageNames.toArrayList().mapNotNull { it as? String }) { done ->
+      promise.resolve(Arguments.fromList(done))
     }
   }
 
-  /** Re-enable a previously hidden game (pm enable). */
+  /** Show hidden games on the phone again for good. Resolves the ones that are back. */
   @ReactMethod
-  fun unhideApp(packageName: String, promise: Promise) {
-    if (!ShizukuManager.hasPermission()) {
-      promise.resolve(false)
-      return
+  fun showApps(packageNames: ReadableArray, promise: Promise) {
+    HiddenApps.show(ctx, packageNames.toArrayList().mapNotNull { it as? String }) { done ->
+      promise.resolve(Arguments.fromList(done))
     }
-    ShizukuManager.exec(ctx, listOf("pm", "enable", packageName)) { out ->
-      promise.resolve(out != null && !out.startsWith("ERR"))
-    }
+  }
+
+  /**
+   * {out}: hidden games switched on right now because they were opened from CantosHub (they
+   * show as installed again but are still hidden as far as the app is concerned). Also takes
+   * the app's saved list, for games hidden before CantosHub kept its own.
+   */
+  @ReactMethod
+  fun hiddenState(savedHidden: ReadableArray, promise: Promise) {
+    HiddenApps.remember(ctx, savedHidden.toArrayList().mapNotNull { it as? String })
+    val m = Arguments.createMap()
+    m.putArray("out", Arguments.fromList(HiddenApps.out(ctx).toList()))
+    promise.resolve(m)
+  }
+
+  /** Games switched back on outside CantosHub: no longer hidden. */
+  @ReactMethod
+  fun forgetHidden(packageNames: ReadableArray, promise: Promise) {
+    HiddenApps.forget(ctx, packageNames.toArrayList().mapNotNull { it as? String })
+    promise.resolve(true)
   }
 
   /** Opens Developer Options (where Wireless debugging lives) for in-app Shizuku setup. */
@@ -1266,20 +1302,10 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     return bmp
   }
 
+  /** Open an app; a game CantosHub hid is switched on first (HiddenApps). */
   @ReactMethod
   fun launchApp(packageName: String, promise: Promise) {
-    try {
-      val intent = ctx.packageManager.getLaunchIntentForPackage(packageName)
-      if (intent == null) {
-        promise.resolve(false)
-        return
-      }
-      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      ctx.startActivity(intent)
-      promise.resolve(true)
-    } catch (e: Exception) {
-      promise.reject("LAUNCH_ERR", e)
-    }
+    HiddenApps.launch(ctx, packageName) { promise.resolve(it) }
   }
 
   // --- In-app updater ---

@@ -50,6 +50,13 @@ class KidsService : Service() {
     // Samsung Wallet's swipe-up-from-the-bottom card. It's an always-running service, so
     // blocking the Wallet screen afterwards still flashed the card; we stop the service.
     private const val WALLET = "com.samsung.android.spay"
+    // Wallet's own database. Touching it starts Wallet's process, which brings the swipe-up
+    // back, without anything showing on screen.
+    private const val WALLET_PROVIDER = "com.samsung.android.spay.provider"
+
+    // ActivityInfo.FLAG_SUPPORTS_PICTURE_IN_PICTURE (hidden in the SDK): video apps.
+    private const val FLAG_SUPPORTS_PIP = 0x400000
+    private val SAFE_PKG = Regex("^[A-Za-z0-9_.]+$") // package names go into shell scripts
 
     // Never block these: system UI, Android's own dialogs, runtime-permission prompts
     // and Google sign-in / purchase-free popups that allowed apps show.
@@ -102,7 +109,7 @@ class KidsService : Service() {
       // the kids Home off once a new default exists (CantosHubModule.kidsGetConfig).
       if (!(KidsPrefs.tookHome(ctx) && homeRoleHeld(ctx))) setHomeAliasEnabled(ctx, false)
       if (ShizukuManager.canRun()) {
-        releaseBar(ctx, force = true)   // force: a lock applied by 1.3.4 or older left no flag
+        releaseBar(ctx) // only when Kids lock really switched the bar off (not on every app start)
         val prev = KidsPrefs.prevHome(ctx)
         if (prev.isNotEmpty()) {
           ShizukuManager.exec(ctx, listOf("cmd", "package", "set-home-activity", prev)) { }
@@ -110,6 +117,48 @@ class KidsService : Service() {
       }
       KidsPrefs.setPrevHome(ctx, "")
       restartWalletIfStopped(ctx)
+      restorePip(ctx)
+    }
+
+    /**
+     * Unlocking: close the apps the kid used and clear them from Recents (PRO). Their tasks go
+     * first - `am stack remove` drops the Recents card too, a force-stop alone leaves it - then
+     * the app itself. Without a shell now it's skipped, not owed: later the parent may be
+     * using those apps.
+     */
+    fun closeUsedApps(ctx: Context) {
+      val used = KidsPrefs.used(ctx).filter { SAFE_PKG.matches(it) && it != ctx.packageName }
+      KidsPrefs.setUsed(ctx, emptySet())
+      if (used.isEmpty() || !ShizukuManager.canRun()) return
+      ShizukuManager.exec(ctx, listOf("sh", "-c", used.joinToString("; ") { closeScript(it) } + "; true")) { }
+    }
+
+    /**
+     * Shell that closes [pkg] like swiping it away in Recents: its tasks go first (that drops
+     * the Recents card too), then the app - a force-stop alone left the card, and a task it
+     * emptied can't be found to remove afterwards. [pkg] must match SAFE_PKG.
+     */
+    private fun closeScript(pkg: String) =
+      "for r in \$(am stack list | awk -v p=$pkg '/^RootTask id=/{split(\$2,a,\"=\");r=a[2]} index(\$0,\": \" p \"/\"){print r}'); " +
+        "do am stack remove \$r; done; am force-stop $pkg"
+
+    /** Give back the picture-in-picture Kids Mode switched off (see blockPip). */
+    fun restorePip(ctx: Context) {
+      val saved = KidsPrefs.pipRestore(ctx).filterKeys { SAFE_PKG.matches(it) }
+      if (saved.isEmpty() || KidsPrefs.isActive(ctx) || !ShizukuManager.canRun()) return
+      // One app failing (uninstalled meanwhile) mustn't keep the rest owed forever.
+      val script = saved.entries.joinToString("; ") { (p, m) -> "appops set $p PICTURE_IN_PICTURE $m 2>/dev/null" }
+      ShizukuManager.exec(ctx, listOf("sh", "-c", "$script; true")) { out ->
+        if (out != null && !out.startsWith("ERR") && !KidsPrefs.isActive(ctx)) KidsPrefs.setPipRestore(ctx, emptyMap())
+      }
+    }
+
+    fun supportsPip(ctx: Context, pkg: String): Boolean = try {
+      @Suppress("DEPRECATION")
+      ctx.packageManager.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
+        .activities?.any { it.flags and FLAG_SUPPORTS_PIP != 0 } == true
+    } catch (e: Exception) {
+      false
     }
 
     /**
@@ -117,34 +166,31 @@ class KidsService : Service() {
      * this can't be done, so the flag stays set and it's retried when Shizuku comes back
      * (MainApplication), when it's granted, and whenever the app reads the Kids settings.
      */
-    fun releaseBar(ctx: Context, force: Boolean = false) {
-      if (!(force || KidsPrefs.barLocked(ctx)) || KidsPrefs.isActive(ctx) || !ShizukuManager.canRun()) return
+    fun releaseBar(ctx: Context) {
+      if (!KidsPrefs.barLocked(ctx) || KidsPrefs.isActive(ctx) || !ShizukuManager.canRun()) return
       ShizukuManager.exec(ctx, listOf("cmd", "statusbar", "send-disable-flag", "none")) { out ->
         if (out != null && !out.startsWith("ERR") && !KidsPrefs.isActive(ctx)) KidsPrefs.setBarLocked(ctx, false)
       }
     }
 
-    /** Opening Wallet once brings its swipe-up shortcut back; then return to CantosHub. */
+    /**
+     * Wallet's swipe-up comes back once its process runs again. Starting it through its content
+     * provider shows nothing; opening Wallet itself (as before) slid its card up by itself right
+     * after unlocking. The shell is the fallback if Android won't let CantosHub reach it.
+     */
     private fun restartWalletIfStopped(ctx: Context) {
       if (!KidsPrefs.walletStopped(ctx)) return
       KidsPrefs.setWalletStopped(ctx, false)
-      val launch = ctx.packageManager.getLaunchIntentForPackage(WALLET) ?: return
-      try {
-        ctx.startActivity(launch.addFlags(
-          // Not left behind as an extra card in Recents.
-          Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or Intent.FLAG_ACTIVITY_NO_ANIMATION,
-        ))
-        Handler(Looper.getMainLooper()).postDelayed({
-          try {
-            ctx.startActivity(
-              Intent(ctx, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
-            )
-          } catch (e: Exception) {
-          }
-        }, 1500)
-      } catch (e: Exception) {
-      }
+      Thread {
+        val ok = try {
+          ctx.contentResolver.acquireUnstableContentProviderClient(WALLET_PROVIDER)?.also { it.close() } != null
+        } catch (e: Exception) {
+          false
+        }
+        if (!ok && ShizukuManager.canRun()) {
+          ShizukuManager.exec(ctx, listOf("sh", "-c", "content query --uri content://$WALLET_PROVIDER/none >/dev/null 2>&1; true")) { }
+        }
+      }.start()
     }
 
     /**
@@ -190,6 +236,10 @@ class KidsService : Service() {
   private var lastQuery = 0L
   private var lastBounce = 0L
   private var ticks = 0
+  // The kids app in front at the last check, and the ones used so far (see closeUsedApps).
+  @Volatile private var inApp: String? = null
+  private val usedNow = mutableSetOf<String>()
+  private val pipApps = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -207,6 +257,7 @@ class KidsService : Service() {
     }
     isRunning = true
     instance = this
+    usedNow.addAll(KidsPrefs.used(this)) // Android restarted the service mid-session
     applySystemLock()
     if (thread == null) {
       thread = HandlerThread("cantoshub-kids").also { it.start() }
@@ -217,9 +268,9 @@ class KidsService : Service() {
     return START_STICKY
   }
 
-  /** A shell became available while Kids Mode is on (e.g. reconnected after a restart). */
+  /** A shell became available while Kids Mode is on and the top bar isn't locked yet. */
   fun reapplyLock() {
-    if (isRunning && KidsPrefs.isActive(this)) handler?.post { applySystemLock() }
+    if (isRunning && KidsPrefs.isActive(this) && !KidsPrefs.barLocked(this)) handler?.post { applySystemLock() }
   }
 
   private fun applySystemLock() {
@@ -239,6 +290,54 @@ class KidsService : Service() {
     }
     KidsPrefs.setBarLocked(this, true)   // before sending: a stray "none" later is harmless
     ShizukuManager.exec(this, listOf("cmd", "statusbar", "send-disable-flag", "statusbar-expansion", "recents")) { }
+    blockPip()
+  }
+
+  /**
+   * No picture-in-picture for the kids' video apps: leaving YouTube floated the video over the
+   * kids screen and kept it playing. Each app's current mode is saved for restorePip.
+   */
+  private fun blockPip() {
+    val apps = KidsPrefs.allowed(this).filter { SAFE_PKG.matches(it) && isPipApp(it) }
+    if (apps.isEmpty()) return
+    val script = apps.joinToString("; ") { p ->
+      "m=\$(appops get $p PICTURE_IN_PICTURE | sed -n 's/.*PICTURE_IN_PICTURE: \\([a-z]*\\).*/\\1/p'); " +
+        "[ \"\$m\" = ignore ] || { appops set $p PICTURE_IN_PICTURE ignore && echo \"$p=\${m:-default}\"; }"
+    }
+    ShizukuManager.exec(this, listOf("sh", "-c", "$script; true")) { out ->
+      val changed = out.orEmpty().lines().mapNotNull { line ->
+        val (p, m) = line.removePrefix("ERR: ").trim().split("=").takeIf { it.size == 2 } ?: return@mapNotNull null
+        if (p in apps) p to m else null
+      }.toMap()
+      // Kept from an earlier session that couldn't restore: those already read "ignore" now.
+      if (changed.isNotEmpty()) KidsPrefs.setPipRestore(this, KidsPrefs.pipRestore(this) + changed)
+    }
+  }
+
+  private fun isPipApp(pkg: String): Boolean = pipApps.getOrPut(pkg) { supportsPip(this, pkg) }
+
+  /**
+   * Remember the kids apps used (closed on unlock), and close a video app the kid just left
+   * (PRO) - YouTube kept playing in the background otherwise. A sign-in or permission popup
+   * over the app isn't leaving it, and neither is a call.
+   */
+  private fun noteForeground(fg: String) {
+    if (fg in ALWAYS_OK) return
+    val prev = inApp
+    val now = if (fg != packageName && fg in KidsPrefs.allowed(this)) fg else null
+    inApp = now
+    if (now != null && usedNow.add(now)) KidsPrefs.setUsed(this, usedNow.toSet())
+    if (prev != null && prev != fg && SAFE_PKG.matches(prev) && isPipApp(prev) && !isCallActive(this) &&
+      ShizukuManager.hasPermission()
+    ) {
+      ShizukuManager.submit(
+        this,
+        // Checked again when it runs: the kid may have gone straight back in.
+        { sh -> if (inApp != prev && KidsPrefs.isActive(this)) sh?.exec(listOf("sh", "-c", closeScript(prev) + "; true")) },
+        { },
+        { inApp != prev },
+      )
+    }
   }
 
   private val tick = object : Runnable {
@@ -247,7 +346,10 @@ class KidsService : Service() {
       try {
         check()
         if (++ticks % 6 == 0) stopWalletSwipe()
-        KidsAccessibilityService.instance?.guardShade()
+        KidsAccessibilityService.instance?.let {
+          it.guardShade()
+          it.closePip()
+        }
       } catch (e: Exception) {
       }
       handler?.postDelayed(this, POLL_MS)
@@ -274,10 +376,12 @@ class KidsService : Service() {
     // usage events still name the blocked app (that left kids stuck on the cover).
     if (MainActivity.resumed) {
       lastFg = packageName
+      noteForeground(packageName)
       hideCover()
       return
     }
     val fg = foreground() ?: return
+    noteForeground(fg)
     if (isOk(fg)) {
       hideCover()
       return

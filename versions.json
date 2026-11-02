@@ -1,6 +1,6 @@
 {
-  "versionCode": 23,
-  "versionName": "1.3.6",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.6/CantosHub-1.3.6.apk",
-  "notes": "NEW: Hide all games from your phone (PRO). Kids Mode: video apps don't float and close when your kid leaves; apps used are cleared on unlock; no more Wallet card on unlock. Fewer Wireless debugging pop-ups."
+  "versionCode": 24,
+  "versionName": "1.3.7",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.7/CantosHub-1.3.7.apk",
+  "notes": "NEW: Hide Kids apps from your phone (all or some) while they stay on the kids screen (PRO). The Wireless debugging alert now pops up just once."
 }

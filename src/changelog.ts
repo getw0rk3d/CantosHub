@@ -4,6 +4,9 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.7':
+    '• NEW: Hide Kids apps from your phone (Kids tab, PRO). Choose all of them or just some: they disappear from your Home screen and app drawer but stay on the kids screen and open from there. Untick one to show it on your phone again.' +
+    '\n• The “Wireless debugging connected” alert now pops up just once: CantosHub connects the first time a PRO feature needs it and stays connected, instead of letting go after a minute and popping up again for every boost, game and Kids Mode. It comes back only after a new connection (a restart or a new Wi-Fi).',
   '1.3.6':
     '• NEW: Hide all games (Games tab, PRO). One tap takes your games off the Home screen and app drawer so they live in CantosHub. Play one and it’s switched on until you close it, then hidden again. Show all on phone brings them back.' +
     '\n• Kids Mode: YouTube and other video apps no longer float picture-in-picture over the kids screen, and they close when your kid leaves them (PRO; with Kids lock alone a floating video is closed).' +

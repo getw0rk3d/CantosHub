@@ -79,6 +79,7 @@ export type ShizukuStatus = {
 export type InstalledApp = {
   packageName: string;
   label: string;
+  hidden?: boolean; // CantosHub hid it from the phone (listed from its own record)
 };
 
 /** An app installed since the last check (for the "add it?" prompt). */
@@ -141,6 +142,7 @@ type NativeShape = {
   freezeBlocked(): Promise<string[]>;
   kidsGetConfig(): Promise<KidsConfig>;
   kidsSetAllowed(json: string): Promise<boolean>;
+  kidsSetHidden(packageNames: string[]): Promise<KidsHideResult>;
   kidsSetPin(oldPin: string, newPin: string): Promise<boolean>;
   kidsStart(): Promise<KidsStartResult>;
   kidsStop(pin: string): Promise<KidsStopResult>;
@@ -205,7 +207,12 @@ export type KidsConfig = {
   homeRoleTaken: boolean; // Kids Mode ended but still holds the borrowed Home: offer the picker
   gestureNav: boolean; // phone uses swipe gestures: Kids Mode must not take over Home (Samsung disables gestures)
   barStuck?: boolean; // Kids Mode ended but the shade/Recents are still off (Shizuku stopped meanwhile)
+  hiddenFromPhone?: string[]; // Kids apps hidden from the Home screen / app drawer (still on the kids screen)
+  asleep?: string[]; // Kids apps asleep until opened: only the system can change that, so they can't be hidden
 };
+
+/** What kidsSetHidden did. failed: couldn't be changed now (no PRO, or the shell refused). */
+export type KidsHideResult = { hidden: string[]; shown: string[]; asleep: string[]; failed: string[] };
 
 /** ok: unlocked. waitMs > 0: too many wrong PINs, wait that long before the next try. */
 export type KidsStopResult = { ok: boolean; waitMs: number };
@@ -336,6 +343,12 @@ export const CantosHub = {
   async kidsSetAllowed(pkgs: string[]): Promise<boolean> {
     if (!native) return true;
     return native.kidsSetAllowed(JSON.stringify(pkgs));
+  },
+
+  /** Hide these Kids apps from the phone (PRO); other hidden Kids apps come back. */
+  async kidsSetHidden(pkgs: string[]): Promise<KidsHideResult> {
+    if (!native) return { hidden: [], shown: [], asleep: [], failed: [] };
+    return native.kidsSetHidden(pkgs);
   },
 
   async kidsSetPin(oldPin: string, newPin: string): Promise<boolean> {

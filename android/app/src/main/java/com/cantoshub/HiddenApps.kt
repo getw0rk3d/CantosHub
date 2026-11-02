@@ -28,25 +28,46 @@ object HiddenApps {
   private fun write(ctx: Context, key: String, pkgs: Set<String>) =
     sp(ctx).edit().putString(key, pkgs.joinToString(",")).commit()
 
-  fun hidden(ctx: Context) = read(ctx, KEY_HIDDEN)
+  /**
+   * The apps CantosHub keeps hidden: switched off now, or switched on just while they're used
+   * (out). One that's on without CantosHub having switched it on was turned back on elsewhere
+   * (App info Enable) or uninstalled, and is dropped - the lists said "hidden" for apps that
+   * sat on the Home screen.
+   */
+  fun hidden(ctx: Context): Set<String> {
+    val all = read(ctx, KEY_HIDDEN)
+    val open = read(ctx, KEY_OUT)
+    val pm = ctx.packageManager
+    val gone = all.filter { p ->
+      p !in open && try {
+        pm.getApplicationEnabledSetting(p) != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+      } catch (e: Exception) {
+        true // uninstalled
+      }
+    }
+    if (gone.isEmpty()) return all
+    forget(ctx, gone)
+    return all - gone.toSet()
+  }
+
   fun out(ctx: Context) = read(ctx, KEY_OUT)
 
   /** Games hidden before CantosHub kept this list (the app's saved list knows them). */
   fun remember(ctx: Context, pkgs: Collection<String>) {
-    val add = pkgs.filter { SAFE_PKG.matches(it) }.toSet() - hidden(ctx)
-    if (add.isNotEmpty()) write(ctx, KEY_HIDDEN, hidden(ctx) + add)
+    val add = pkgs.filter { SAFE_PKG.matches(it) }.toSet() - read(ctx, KEY_HIDDEN)
+    if (add.isNotEmpty()) write(ctx, KEY_HIDDEN, read(ctx, KEY_HIDDEN) + add)
   }
 
   /** No longer hidden: switched back on outside CantosHub (its App info Enable button). */
   fun forget(ctx: Context, pkgs: Collection<String>) {
-    write(ctx, KEY_HIDDEN, hidden(ctx) - pkgs.toSet())
+    write(ctx, KEY_HIDDEN, read(ctx, KEY_HIDDEN) - pkgs.toSet())
     write(ctx, KEY_OUT, out(ctx) - pkgs.toSet())
   }
 
   /** Hide [pkgs] from the phone; [cb] gets the ones that are hidden now. */
   fun hide(ctx: Context, pkgs: Collection<String>, cb: (List<String>) -> Unit) =
     run(ctx, pkgs, { p -> "pm disable-user --user 0 $p" }, cb) { done ->
-      write(ctx, KEY_HIDDEN, hidden(ctx) + done)
+      write(ctx, KEY_HIDDEN, read(ctx, KEY_HIDDEN) + done)
       write(ctx, KEY_OUT, out(ctx) - done.toSet())
     }
 
@@ -105,6 +126,23 @@ object HiddenApps {
       ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       true
     }
+  } catch (e: Exception) {
+    false
+  }
+
+  /**
+   * [pkgs] were just closed (Kids Mode unlock): hide again the ones switched on for now, without
+   * waiting for QUIET_MS. Queued after the close, so they're really closed when this runs.
+   */
+  fun rehide(ctx: Context, pkgs: Collection<String>) {
+    val due = out(ctx).filter { it in pkgs }
+    if (due.isNotEmpty()) hide(ctx, due) { }
+  }
+
+  /** Is [pkg] asleep until opened? Only the system can change that state, so it can't be hidden. */
+  fun asleep(ctx: Context, pkg: String): Boolean = try {
+    ctx.packageManager.getApplicationEnabledSetting(pkg) ==
+      android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED
   } catch (e: Exception) {
     false
   }

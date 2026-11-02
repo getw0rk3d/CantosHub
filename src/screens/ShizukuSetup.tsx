@@ -72,7 +72,7 @@ export default function ShizukuSetup({
               {shizuku.via !== 'shizuku' && (
                 <Text style={styles.doneSub}>
                   {b?.autoStart
-                    ? 'Works on Wi-Fi. CantosHub connects only while it’s doing something, so Android’s “Wireless debugging connected” alert shows then and goes away about a minute later. After a restart it turns Wireless debugging back on by itself.'
+                    ? 'Works on Wi-Fi. CantosHub connects the first time a PRO feature needs it and then stays connected, so Android’s “Wireless debugging connected” alert pops up once and then sits quietly in the notification shade. It comes back only after a new connection (a restart, or a new Wi-Fi). After a restart CantosHub turns Wireless debugging back on by itself.'
                     : 'Works on Wi-Fi. After a restart, turn Wireless debugging on again and tap Reconnect here.'}
                 </Text>
               )}

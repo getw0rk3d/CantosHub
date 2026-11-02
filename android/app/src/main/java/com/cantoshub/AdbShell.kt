@@ -43,17 +43,17 @@ object AdbShell {
   private const val EXIT_MARK = "__CANTOSHUB_EXIT="
   private const val RETRY_AFTER_MS = 30_000L
 
-  // Let go of Wireless debugging this long after the last command. While CantosHub is
-  // connected Android shows its own "Wireless debugging connected" alert (it can't be made
-  // silent), so the connection only lives while CantosHub is actually doing something.
-  private const val IDLE_MS = 60_000L
+  // Android pops its own "Wireless debugging connected" alert (it can't be made silent) every
+  // time a device connects. So CantosHub connects only when a PRO command needs it and then
+  // stays connected: the alert pops once and sits quietly in the shade. Letting go after a
+  // minute idle (1.3.6) made it pop again for every boost, game switch and Kids Mode.
+  // The connection ends by itself when Wi-Fi goes (MainApplication.watchWifi) or on restart.
 
   private val lock = Any()
   private val connectLock = Any()
   private var manager: Manager? = null
   @Volatile private var lastFail = 0L
   @Volatile private var appCtx: Context? = null
-  private var idleClose: java.util.concurrent.ScheduledFuture<*>? = null
 
   /** Told when the connection comes or goes (the app refreshes its PRO status). */
   @Volatile var onChange: (() -> Unit)? = null
@@ -128,8 +128,9 @@ object AdbShell {
    * Wireless debugging on or CantosHub allowed to switch it on, and no failed try just now).
    */
   fun ready(): Boolean {
-    if (isConnected()) return true
-    val c = appCtx ?: return false
+    val c = appCtx ?: return isConnected()
+    // Connected but off Wi-Fi: that connection is gone (it stays open between commands now).
+    if (isConnected() && onWifi(c)) return true
     return isPaired(c) && onWifi(c) && (wirelessOn(c) || canAutoStart(c)) &&
       System.currentTimeMillis() - lastFail > RETRY_AFTER_MS
   }
@@ -165,8 +166,9 @@ object AdbShell {
     lastFail = if (ok) 0L else System.currentTimeMillis()
     if (ok) {
       // So next time (a restart, Wi-Fi back) CantosHub can switch Wireless debugging on itself.
-      if (!canAutoStart(ctx)) exec(ctx, listOf("pm", "grant", ctx.packageName, "android.permission.WRITE_SECURE_SETTINGS"))
-      scheduleIdleClose()
+      if (!canAutoStart(ctx)) {
+        exec(ctx, listOf("pm", "grant", ctx.packageName, "android.permission.WRITE_SECURE_SETTINGS"), retry = false)
+      }
       onChange?.invoke()
     }
     ok
@@ -181,25 +183,10 @@ object AdbShell {
   }
 
   /**
-   * (Re)start the idle countdown; the connection closes [IDLE_MS] after the last command. Not
-   * during Kids Mode: it runs commands now and then (closing a video app the kid left), and
-   * each reconnect popped the alert over the kid's screen.
-   */
-  private fun scheduleIdleClose() {
-    synchronized(lock) {
-      idleClose?.cancel(false)
-      idleClose = timer.schedule({
-        val kids = appCtx?.let { KidsPrefs.isActive(it) } == true
-        if (kids) scheduleIdleClose() else if (isConnected()) disconnect()
-      }, IDLE_MS, TimeUnit.MILLISECONDS)
-    }
-  }
-
-  /**
    * Blocking: run [command] as shell. Output (stdout + stderr) like the Shizuku service,
    * with "ERR: " in front when it exits non-zero; null when there's no connection.
    */
-  fun exec(ctx: Context, command: List<String>, timeoutMs: Long = EXEC_TIMEOUT_MS): String? {
+  fun exec(ctx: Context, command: List<String>, timeoutMs: Long = EXEC_TIMEOUT_MS, retry: Boolean = true): String? {
     if (!isConnected()) return null
     val line = command.joinToString(" ") { quote(it) } + "; echo \"$EXIT_MARK\$?\""
     return try {
@@ -224,12 +211,12 @@ object AdbShell {
       if (at < 0) return null // cut off (timed out or the connection dropped)
       val code = text.substring(at + EXIT_MARK.length).trim().toIntOrNull() ?: 0
       val out = text.substring(0, at).trim()
-      scheduleIdleClose()
       if (code != 0) "ERR: $out" else out
     } catch (e: Exception) {
-      // The connection broke (Wireless debugging off, Wi-Fi gone): reconnect next time.
-      if (!isConnected()) onChange?.invoke()
-      null
+      // The connection broke (Wireless debugging off, Wi-Fi gone, adbd restarted). It stays open
+      // between commands now, so it can go stale unnoticed: drop it and try once on a new one.
+      disconnect()
+      if (retry && connect(ctx)) exec(ctx, command, timeoutMs, retry = false) else null
     }
   }
 

@@ -56,13 +56,23 @@ class MainApplication : Application(), ReactApplication {
           val wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
           val paired = AdbShell.isPaired(this@MainApplication)
           if (paired && wifi && !onWifi) onShellReady(this@MainApplication)
+          if (paired && !wifi && onWifi) leftWifi()
           if (paired && wifi != onWifi) AdbShell.onChange?.invoke() // the app's PRO status follows
           onWifi = wifi
         }
 
         override fun onLost(network: Network) {
-          if (onWifi) AdbShell.onChange?.invoke()
+          if (onWifi) {
+            leftWifi()
+            AdbShell.onChange?.invoke()
+          }
           onWifi = false
+        }
+
+        // Wireless debugging went off with the Wi-Fi, and the connection with it: drop it rather
+        // than keep a dead one. Not when only the default network flipped and it's still on.
+        private fun leftWifi() {
+          if (AdbShell.isConnected() && !AdbShell.wirelessOn(this@MainApplication)) AdbShell.disconnect()
         }
       })
     } catch (e: Exception) { }

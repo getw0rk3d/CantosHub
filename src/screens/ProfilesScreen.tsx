@@ -235,6 +235,7 @@ export function AppPickerModal({
   multiSelect = true,
   title = 'Freeze while gaming',
   subtitle = 'Selected apps are suspended on boost and restored when you stop.',
+  only,
   onClose,
   onSave,
 }: {
@@ -243,6 +244,8 @@ export function AppPickerModal({
   multiSelect?: boolean;
   title?: string;
   subtitle?: string;
+  /** List just these apps (e.g. the Kids apps) instead of every app. */
+  only?: string[];
   onClose: () => void;
   onSave: (selected: string[]) => void;
 }) {
@@ -261,7 +264,12 @@ export function AppPickerModal({
     Promise.all([CantosHub.listInstalledApps(), multiSelect ? CantosHub.freezeBlocked() : Promise.resolve([])])
       .then(([list, blockedList]) => {
         const blocked = new Set(blockedList);
-        setApps(list.filter(a => !blocked.has(a.packageName)).sort((a, b) => a.label.localeCompare(b.label)));
+        const keep = only ? new Set(only) : null;
+        setApps(
+          list
+            .filter(a => !blocked.has(a.packageName) && (!keep || keep.has(a.packageName)))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        );
         setSelected(new Set(initialSelected.filter(p => !blocked.has(p))));
       })
       .finally(() => setLoading(false));

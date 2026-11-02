@@ -22,6 +22,7 @@ object KidsPrefs {
   private const val KEY_PIN_WAIT_UNTIL = "pin_wait_until"
   private const val KEY_BAR_LOCKED = "bar_locked"
   private const val KEY_USED = "used"
+  private const val KEY_KIDS_HIDDEN = "kids_hidden"
   private const val KEY_PIP_RESTORE = "pip_restore"
 
   // Wrong PINs: the first few are free (small kids mash keys), then the pad waits 30 s,
@@ -115,6 +116,15 @@ object KidsPrefs {
   fun used(ctx: Context): Set<String> =
     (sp(ctx).getString(KEY_USED, "") ?: "").split(",").filter { it.isNotBlank() }.toSet()
   fun setUsed(ctx: Context, pkgs: Set<String>) = sp(ctx).edit().putString(KEY_USED, pkgs.joinToString(",")).commit()
+
+  /**
+   * Kids apps the parent hid from the phone in the Kids tab (HiddenApps does the hiding). Kept
+   * so an app taken off the Kids list is shown on the phone again rather than left hidden.
+   */
+  fun kidsHidden(ctx: Context): Set<String> =
+    (sp(ctx).getString(KEY_KIDS_HIDDEN, "") ?: "").split(",").filter { it.isNotBlank() }.toSet()
+  fun setKidsHidden(ctx: Context, pkgs: Set<String>) =
+    sp(ctx).edit().putString(KEY_KIDS_HIDDEN, pkgs.joinToString(",")).commit()
 
   /**
    * Picture-in-picture Kids Mode switched off, as package to its previous app-op mode

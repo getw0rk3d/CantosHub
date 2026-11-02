@@ -369,7 +369,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
             {visible.slice(0, limit).map((g, i) => {
               const profile = store.profiles.find(p => p.packageName === g.packageName);
               const st = stats[g.packageName];
-              const hidden = hiddenSet.has(g.packageName);
+              const hidden = hiddenSet.has(g.packageName) || !!g.hidden; // g.hidden: e.g. hidden in the Kids tab
               const played = fmtTime(g.totalTimeMs);
               const onPlay = async () => {
                 // A hidden game is switched on for this session by launchApp (PRO); without PRO
@@ -497,7 +497,7 @@ export default function LibraryScreen({ onGoPermissions }: { onGoPermissions: ()
                 await CantosHub.requestAddTile();
               }}
             />
-            {moreFor && hiddenSet.has(moreFor.packageName) ? (
+            {moreFor && (hiddenSet.has(moreFor.packageName) || moreFor.hidden) ? (
               <MoreItem
                 label="Unhide (show in app drawer)"
                 onPress={async () => {

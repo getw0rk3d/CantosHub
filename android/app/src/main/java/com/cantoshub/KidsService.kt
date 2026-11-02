@@ -131,6 +131,7 @@ class KidsService : Service() {
       KidsPrefs.setUsed(ctx, emptySet())
       if (used.isEmpty() || !ShizukuManager.canRun()) return
       ShizukuManager.exec(ctx, listOf("sh", "-c", used.joinToString("; ") { closeScript(it) } + "; true")) { }
+      HiddenApps.rehide(ctx, used) // Kids apps hidden from the phone: closed now, so hide them again
     }
 
     /**

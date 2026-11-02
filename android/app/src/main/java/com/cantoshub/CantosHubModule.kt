@@ -236,8 +236,14 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       m.putBoolean("running", KidsService.isRunning)
       m.putBoolean("hasPin", KidsPrefs.hasPin(ctx))
       val arr = Arguments.createArray()
-      KidsPrefs.allowed(ctx).forEach { arr.pushString(it) }
+      val allowed = KidsPrefs.allowed(ctx)
+      allowed.forEach { arr.pushString(it) }
       m.putArray("allowed", arr)
+      // Kids apps hidden from the phone right now (however they were hidden), and the ones
+      // asleep until opened, which CantosHub can't hide.
+      val hidden = HiddenApps.hidden(ctx)
+      m.putArray("hiddenFromPhone", Arguments.fromList(allowed.filter { it in hidden }))
+      m.putArray("asleep", Arguments.fromList(allowed.filter { HiddenApps.asleep(ctx, it) }))
       val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
       m.putBoolean("deviceSecure", km.isDeviceSecure)
       m.putBoolean("strongLock", ShizukuManager.hasPermission())
@@ -268,9 +274,42 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     try {
       val arr = JSONArray(json)
       KidsPrefs.setAllowed(ctx, (0 until arr.length()).map { arr.optString(it) })
+      // Taken off the Kids list: an app hidden from the phone in the Kids tab comes back, or
+      // nothing would show it any more.
+      val dropped = KidsPrefs.kidsHidden(ctx) - KidsPrefs.allowed(ctx)
+      if (dropped.isNotEmpty()) {
+        HiddenApps.show(ctx, dropped) { shown -> KidsPrefs.setKidsHidden(ctx, KidsPrefs.kidsHidden(ctx) - shown.toSet()) }
+      }
       promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("KIDS_ALLOWED_ERR", e)
+    }
+  }
+
+  /**
+   * Which Kids apps to hide from the phone (PRO): they disappear from the Home screen and app
+   * drawer but stay on the kids screen, which switches one on while it's used (HiddenApps).
+   * Kids apps not in [packageNames] that are hidden come back. Resolves {hidden, shown,
+   * asleep, failed}: asleep apps can't be hidden from here (only the system changes that).
+   */
+  @ReactMethod
+  fun kidsSetHidden(packageNames: ReadableArray, promise: Promise) {
+    val allowed = KidsPrefs.allowed(ctx)
+    val want = packageNames.toArrayList().mapNotNull { it as? String }.filter { it in allowed }.toSet()
+    val hiddenNow = HiddenApps.hidden(ctx).filter { it in allowed }.toSet()
+    val asleep = want.filter { it !in hiddenNow && HiddenApps.asleep(ctx, it) }
+    val toHide = want - hiddenNow - asleep.toSet()
+    val toShow = hiddenNow - want
+    HiddenApps.hide(ctx, toHide) { hidden ->
+      HiddenApps.show(ctx, toShow) { shown ->
+        KidsPrefs.setKidsHidden(ctx, (KidsPrefs.kidsHidden(ctx) - shown.toSet()) + hidden)
+        val m = Arguments.createMap()
+        m.putArray("hidden", Arguments.fromList(hidden))
+        m.putArray("shown", Arguments.fromList(shown))
+        m.putArray("asleep", Arguments.fromList(asleep))
+        m.putArray("failed", Arguments.fromList(((toHide - hidden.toSet()) + (toShow - shown.toSet())).toList()))
+        promise.resolve(m)
+      }
     }
   }
 
@@ -740,10 +779,28 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
         m.putString("label", ri.loadLabel(pm).toString())
         arr.pushMap(m)
       }
+      // Apps CantosHub hid are switched off, so Android doesn't list them; the kids screen and
+      // the app pickers still need them (a picker that left them out would drop them on save).
+      for (pkg in HiddenApps.hidden(ctx)) {
+        if (!seen.add(pkg)) continue
+        val ai = hiddenAppInfo(pkg) ?: continue
+        val m = Arguments.createMap()
+        m.putString("packageName", pkg)
+        m.putString("label", pm.getApplicationLabel(ai).toString())
+        m.putBoolean("hidden", true)
+        arr.pushMap(m)
+      }
       promise.resolve(arr)
     } catch (e: Exception) {
       promise.reject("LIST_APPS_ERR", e)
     }
+  }
+
+  /** A switched-off app's info (plain lookups skip disabled apps); null if uninstalled. */
+  private fun hiddenAppInfo(pkg: String): ApplicationInfo? = try {
+    ctx.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_DISABLED_COMPONENTS)
+  } catch (e: Exception) {
+    null
   }
 
   // --- Library (Phase 3) ---
@@ -788,11 +845,7 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
       // games here, with their playtime.
       for (pkg in HiddenApps.hidden(ctx)) {
         if (!seen.add(pkg)) continue
-        val ai = try {
-          pm.getApplicationInfo(pkg, PackageManager.MATCH_DISABLED_COMPONENTS)
-        } catch (e: Exception) {
-          continue // uninstalled meanwhile
-        }
+        val ai = hiddenAppInfo(pkg) ?: continue // uninstalled meanwhile
         val m = Arguments.createMap()
         m.putString("packageName", pkg)
         m.putString("label", pm.getApplicationLabel(ai).toString())
@@ -1280,7 +1333,9 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun getAppIcon(packageName: String, promise: Promise) {
     try {
-      val icon = ctx.packageManager.getApplicationIcon(packageName)
+      // Through its ApplicationInfo so a hidden (switched-off) app still has its icon.
+      val icon = hiddenAppInfo(packageName)?.let { ctx.packageManager.getApplicationIcon(it) }
+        ?: ctx.packageManager.getApplicationIcon(packageName)
       val bmp = drawableToBitmap(icon, 96)
       val baos = ByteArrayOutputStream()
       bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)

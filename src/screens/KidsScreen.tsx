@@ -4,13 +4,14 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { AppIcon } from '../components/AppIcon';
 import { Icon } from '../components/Icon';
 import { PinPad } from '../components/PinPad';
-import { PrimaryButton, ProBadge, SectionCard } from '../components/ui';
+import { PrimaryButton, SectionCard } from '../components/ui';
 import { CantosHub } from '../native/CantosHub';
 import { useStore } from '../state/store';
 import { colors, spacing } from '../theme';
 import { AppPickerModal } from './ProfilesScreen';
 import { useKidsLockSetup } from './useKidsLockSetup';
 import { offerHomeGiveBack } from './homeGiveBack';
+import { askHideMode, confirmAsync, HideMode, homeHideGuide, nameList } from './homeHide';
 
 type PinStep = null | 'old' | 'new' | 'confirm';
 
@@ -42,50 +43,115 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
     await store.refreshKids();
   };
 
-  // Hide Kids apps from the phone: they stay on the kids screen, which opens them (PRO).
+  // Hide Kids apps from the phone: they stay on the kids screen, which opens them.
   const [hidePicking, setHidePicking] = useState(false);
   const [hideBusy, setHideBusy] = useState(false);
-  const hiddenSet = new Set(kids?.hiddenFromPhone ?? []);
+  // Switched off by CantosHub (PRO): they can't send notifications while hidden.
+  const offSet = new Set(kids?.hiddenFromPhone ?? []);
+  // Hidden on the Home screen: still switched on, so their notifications keep coming.
+  const homeSet = new Set(store.homeHidden.map(h => h.packageName).filter(p => allowed.includes(p)));
+  const hiddenSet = new Set([...offSet, ...homeSet]);
   const asleepSet = new Set(kids?.asleep ?? []);
-  const hideable = allowed.filter(p => !asleepSet.has(p) || hiddenSet.has(p));
-  const asleepApps = allowed.filter(p => asleepSet.has(p) && !hiddenSet.has(p));
   const nameOf = (p: string) => labels[p] ?? p.split('.').pop() ?? p;
+  const asHidden = (p: string) => ({ packageName: p, label: nameOf(p) });
 
-  const openHomeHide = async () => {
-    if (!(await CantosHub.openLauncherHideApps())) {
-      Alert.alert('Not available', 'This Home screen can’t hide apps.');
+  const openHidePicker = () => setHidePicking(true);
+
+  const saveHidden = async (sel: string[]) => {
+    setHidePicking(false);
+    const newly = sel.filter(p => !hiddenSet.has(p));
+    const unticked = [...hiddenSet].filter(p => !sel.includes(p));
+    if (!newly.length && !unticked.length) return;
+    const info = await CantosHub.homeHideInfo();
+    let mode: HideMode = 'keep';
+    if (newly.length) {
+      const m = await askHideMode(
+        newly.length === 1 ? nameOf(newly[0]) : `${newly.length} Kids apps`,
+        newly.length > 1,
+        info,
+        !!store.shizuku?.granted,
+        'Either way they stay on the kids screen and open from there.',
+      );
+      if (!m) return;
+      mode = m;
+    }
+    setHideBusy(true);
+    let failed: string[] = [];
+    let toHome: string[] = [];
+    const homeOff = [...homeSet].filter(p => !sel.includes(p));
+    try {
+      // Switched-off apps still ticked stay off; in Switch off mode the new ones join them
+      // (not asleep ones: only the system can switch those, so the Home screen hides them).
+      const keepOff = [...offSet].filter(p => sel.includes(p));
+      const offTarget = mode === 'off' ? [...keepOff, ...newly.filter(p => !asleepSet.has(p))] : keepOff;
+      const changed = offTarget.length !== offSet.size || offTarget.some(p => !offSet.has(p));
+      const r = changed ? await CantosHub.kidsSetHidden(offTarget) : null;
+      failed = r?.failed ?? [];
+      store.unmarkHomeHidden(homeOff);
+      await store.refreshKids();
+      toHome = mode === 'keep' ? newly : [...new Set([...newly.filter(p => asleepSet.has(p)), ...(r?.asleep ?? [])])];
+    } finally {
+      setHideBusy(false);
+    }
+    if (toHome.length || homeOff.length) {
+      const intro =
+        mode === 'off' && toHome.length
+          ? `${nameList(toHome.map(nameOf))} ${toHome.length === 1 ? 'is' : 'are'} asleep (Android switches ${toHome.length === 1 ? 'it' : 'them'} on when opened), so CantosHub can’t switch ${toHome.length === 1 ? 'it' : 'them'} off.`
+          : '';
+      if ((await homeHideGuide(info, toHome.map(nameOf), homeOff.map(nameOf), intro)) && toHome.length) {
+        store.markHomeHidden(toHome.map(asHidden));
+      }
+    }
+    if (failed.length) {
+      Alert.alert(
+        'Some apps didn’t change',
+        `${failed.map(nameOf).join(', ')} couldn’t be changed right now. Check that PRO access is on and try again.`,
+      );
     }
   };
 
-  const openHidePicker = () => {
+  /**
+   * Kids apps CantosHub switched off can't send notifications. Switch them back on and hide
+   * them on the Home screen instead: still hidden, notifications back.
+   */
+  const kidsNotificationsOn = async () => {
+    const list = [...offSet];
+    if (!list.length) return;
     if (!store.shizuku?.granted) {
       Alert.alert(
-        'Hide Kids apps from your phone',
-        'Hiding them from here is PRO (Access tab → PRO access). Your Home screen can also hide apps itself: on the next screen tap “Hide apps on Home and Apps screens” and select them. They still show on the kids screen either way.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open', onPress: openHomeHide },
-        ],
+        'Turn notifications on',
+        `${list.length === 1 ? 'It was' : 'They were'} switched off with PRO access, which isn’t on right now. Turn it on (Access tab → PRO access) and try again.`,
       );
       return;
     }
-    setHidePicking(true);
-  };
-
-  const saveHidden = async (pkgs: string[]) => {
-    setHidePicking(false);
+    const info = await CantosHub.homeHideInfo();
+    const names = nameList(list.map(nameOf));
+    const many = list.length > 1;
+    const ok = await confirmAsync(
+      'Turn notifications on',
+      info.kind === 'none'
+        ? `${info.label || 'Your Home screen'} can’t hide apps itself, so ${names} will show on your phone again (and stay on the kids screen). Android only lets CantosHub hide an app by switching it off, which is what stops its notifications.`
+        : `CantosHub switches ${names} back on, then opens your Home screen’s Hide apps so ${many ? 'they stay' : 'it stays'} hidden there. ${many ? 'They stay' : 'It stays'} on the kids screen.`,
+      info.kind === 'none' ? 'Switch on' : 'Continue',
+    );
+    if (!ok) return;
     setHideBusy(true);
+    let shown: string[] = [];
+    let failed: string[] = [];
     try {
-      const r = await CantosHub.kidsSetHidden(pkgs);
+      const r = await CantosHub.kidsSetHidden([]);
+      shown = r.shown;
+      failed = r.failed;
       await store.refreshKids();
-      if (r.failed.length) {
-        Alert.alert(
-          'Some apps didn’t change',
-          `${r.failed.map(nameOf).join(', ')} couldn’t be changed right now. Check that PRO access is on and try again.`,
-        );
-      }
     } finally {
       setHideBusy(false);
+    }
+    if (shown.length && info.kind !== 'none') {
+      const intro = `${nameList(shown.map(nameOf))} ${shown.length === 1 ? 'is' : 'are'} switched on again, so notifications are back. Now hide ${shown.length === 1 ? 'it' : 'them'} on your Home screen:`;
+      if (await homeHideGuide(info, shown.map(nameOf), [], intro)) store.markHomeHidden(shown.map(asHidden));
+    }
+    if (failed.length) {
+      Alert.alert('Some are still switched off', `${failed.map(nameOf).join(', ')} couldn’t be switched back on. Try again.`);
     }
   };
 
@@ -238,7 +304,10 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
                 <Text style={styles.appLabel} numberOfLines={1}>
                   {labels[p] ?? p.split('.').pop()}
                 </Text>
-                {hiddenSet.has(p) && <Text style={styles.hiddenTag}>hidden</Text>}
+                {hiddenSet.has(p) && (
+                  // Amber: switched off (no notifications). Green: hidden on the Home screen.
+                  <Text style={[styles.hiddenTag, !offSet.has(p) && styles.hiddenTagOn]}>hidden</Text>
+                )}
               </View>
             ))}
           </View>
@@ -247,31 +316,32 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
           <View style={styles.hideBox}>
             <View style={styles.hideHead}>
               <Text style={styles.hideTitle}>Hide from your phone</Text>
-              <ProBadge />
             </View>
             <Text style={styles.dim}>
               {hiddenSet.size
                 ? `${hiddenSet.size} of ${allowed.length} ${hiddenSet.size === 1 ? 'is' : 'are'} hidden from your Home screen and app drawer. They still show on the kids screen and open from there.`
-                : 'Keep Kids apps off your Home screen and app drawer, all of them or just some. They still show on the kids screen and open from there.'}
-              {asleepApps.length
-                ? `\n\n${asleepApps.map(nameOf).slice(0, 3).join(', ')}${asleepApps.length > 3 ? '…' : ''} ${asleepApps.length === 1 ? 'is' : 'are'} asleep (Android switches ${asleepApps.length === 1 ? 'it' : 'them'} on when opened), which only the system can change, so ${asleepApps.length === 1 ? 'it' : 'they'} can only be hidden from your Home screen’s Hide apps.`
-                : ''}
+                : 'Keep Kids apps off your Home screen and app drawer, all of them or just some. They still show on the kids screen and open from there, and their notifications keep coming.'}
             </Text>
-            {hideable.length > 0 && (
-              <View style={{ marginTop: spacing.md }}>
-                <PrimaryButton
-                  title={hiddenSet.size ? 'Change which are hidden' : 'Choose apps to hide'}
-                  variant="outline"
-                  busy={hideBusy}
-                  onPress={openHidePicker}
-                />
-              </View>
+            {offSet.size > 0 && (
+              <>
+                <Text style={[styles.dim, styles.warnText]}>
+                  {offSet.size === 1
+                    ? `${nameOf([...offSet][0])} is switched off, so it can’t send notifications.`
+                    : `${offSet.size} of them are switched off, so they can’t send notifications.`}
+                </Text>
+                <View style={{ marginTop: spacing.sm }}>
+                  <PrimaryButton title="Turn notifications on" busy={hideBusy} onPress={kidsNotificationsOn} />
+                </View>
+              </>
             )}
-            {asleepApps.length > 0 && (
-              <Pressable onPress={openHomeHide} hitSlop={8} style={{ marginTop: spacing.md }}>
-                <Text style={styles.link}>Open Home screen Hide apps</Text>
-              </Pressable>
-            )}
+            <View style={{ marginTop: spacing.md }}>
+              <PrimaryButton
+                title={hiddenSet.size ? 'Change which are hidden' : 'Choose apps to hide'}
+                variant="outline"
+                busy={hideBusy}
+                onPress={openHidePicker}
+              />
+            </View>
           </View>
         )}
       </SectionCard>
@@ -344,9 +414,9 @@ export default function KidsScreen({ onGoPermissions }: { onGoPermissions: () =>
 
       <AppPickerModal
         visible={hidePicking}
-        only={hideable}
+        only={allowed}
         // First time: everything ticked, so hiding them all is one tap.
-        initialSelected={hiddenSet.size ? [...hiddenSet] : hideable}
+        initialSelected={hiddenSet.size ? [...hiddenSet] : allowed}
         title="Hide from your phone"
         subtitle="Ticked apps disappear from your Home screen and app drawer. They stay on the kids screen and open from there. Untick one to show it on your phone again."
         onClose={() => setHidePicking(false)}
@@ -387,6 +457,8 @@ const styles = StyleSheet.create({
   appCell: { width: 64, alignItems: 'center' },
   appLabel: { color: colors.text, fontSize: 11, marginTop: 4 },
   hiddenTag: { color: colors.warn, fontSize: 10, fontWeight: '700' },
+  hiddenTagOn: { color: colors.accent },
+  warnText: { color: colors.warn, marginTop: spacing.sm },
   hideBox: { marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   hideHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
   hideTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },

@@ -4,6 +4,10 @@
  * the installed build.
  */
 export const CHANGELOG: Record<string, string> = {
+  '1.3.8':
+    '• Hidden apps keep their notifications. When you hide games or Kids apps you now choose: Keep notifications (recommended) hides them with your Home screen’s own Hide apps, so they stay switched on and their notifications, messages and Play Store updates keep coming, or Switch off, the stricter hide from before (no notifications while hidden). They live in CantosHub either way.' +
+    '\n• Apps CantosHub switched off can get their notifications back: tap Turn notifications on (Games tab, Kids tab, or a game’s More menu). They’re switched back on and you hide them on your Home screen in one step.' +
+    '\n• Hidden games show HIDDEN, and HIDDEN · NO ALERTS when they’re switched off. Hiding through the Home screen works without PRO, and opens the right settings for your Home app (One UI Home, Nova and others).',
   '1.3.7':
     '• NEW: Hide Kids apps from your phone (Kids tab, PRO). Choose all of them or just some: they disappear from your Home screen and app drawer but stay on the kids screen and open from there. Untick one to show it on your phone again.' +
     '\n• The “Wireless debugging connected” alert now pops up just once: CantosHub connects the first time a PRO feature needs it and stays connected, instead of letting go after a minute and popping up again for every boost, game and Kids Mode. It comes back only after a new connection (a restart or a new Wi-Fi).',

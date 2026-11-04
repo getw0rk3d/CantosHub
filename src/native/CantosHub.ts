@@ -156,6 +156,7 @@ type NativeShape = {
   blockedBoosterPackages(): Promise<string[]>;
   getProLeftovers(): Promise<{ frozenApps: number; resolutionChanged: boolean }>;
   openLauncherHideApps(): Promise<'samsung' | 'home' | ''>;
+  homeHideInfo(): Promise<HomeHideInfo>;
   getCapabilities(): Promise<Capabilities>;
   reconcile(): Promise<boolean>;
   setDnd(enable: boolean): Promise<boolean>;
@@ -216,6 +217,12 @@ export type KidsHideResult = { hidden: string[]; shown: string[]; asleep: string
 
 /** ok: unlocked. waitMs > 0: too many wrong PINs, wait that long before the next try. */
 export type KidsStopResult = { ok: boolean; waitMs: number };
+
+/**
+ * The Home screen's own Hide apps. samsung: One UI Home ("Hide apps on Home and Apps screens");
+ * launcher: another Home app (most have Hide apps in their settings); none: it can't hide apps.
+ */
+export type HomeHideInfo = { kind: 'samsung' | 'launcher' | 'none'; label: string };
 
 /** out: hidden games switched on for now (opened from CantosHub, hidden again once closed). */
 export type HiddenState = { out: string[] };
@@ -422,6 +429,19 @@ export const CantosHub = {
   async openLauncherHideApps(): Promise<'samsung' | 'home' | ''> {
     if (!native) return '';
     return native.openLauncherHideApps();
+  },
+
+  /**
+   * Can the Home screen hide apps itself? Apps hidden there stay switched on, so their
+   * notifications keep coming (CantosHub's own hide switches apps off, which stops them).
+   */
+  async homeHideInfo(): Promise<HomeHideInfo> {
+    if (!native?.homeHideInfo) return { kind: 'none', label: '' };
+    try {
+      return await native.homeHideInfo();
+    } catch {
+      return { kind: 'none', label: '' };
+    }
   },
 
   /** Push edited profiles to a running boost, Auto or Manual (no restart, no re-boost). */

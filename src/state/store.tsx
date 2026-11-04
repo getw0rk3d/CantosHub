@@ -126,6 +126,14 @@ type Store = {
    */
   hiddenOut: string[];
   refreshHiddenOut: () => Promise<string[]>;
+  /**
+   * Apps hidden with the Home screen's own Hide apps (Samsung: "Hide apps on Home and Apps
+   * screens"). They stay switched on, so their notifications, background sync and Play Store
+   * updates keep working; they still live in CantosHub (Games tab, kids screen).
+   */
+  homeHidden: HiddenGame[];
+  markHomeHidden: (apps: HiddenGame[]) => void;
+  unmarkHomeHidden: (packageNames: string[]) => void;
 
   /** Apps the user added to Games (Android doesn't tag them as games). */
   addedGames: HiddenGame[];
@@ -196,6 +204,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [hiddenGames, setHiddenGames] = useState<HiddenGame[]>([]);
   const [hiddenOut, setHiddenOut] = useState<string[]>([]);
+  const [homeHidden, setHomeHidden] = useState<HiddenGame[]>([]);
   const [addedGames, setAddedGames] = useState<HiddenGame[]>([]);
   const [update, setUpdate] = useState<UpdateState | null>(null);
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null);
@@ -412,6 +421,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return done;
   }, []);
 
+  const markHomeHidden = useCallback((apps: HiddenGame[]) => {
+    if (!apps.length) return;
+    setHomeHidden(prev => [
+      ...prev,
+      ...apps
+        .filter(a => !prev.some(p => p.packageName === a.packageName))
+        .map(a => ({ packageName: a.packageName, label: a.label })),
+    ]);
+  }, []);
+
+  const unmarkHomeHidden = useCallback((packageNames: string[]) => {
+    if (!packageNames.length) return;
+    setHomeHidden(prev => prev.filter(h => !packageNames.includes(h.packageName)));
+  }, []);
+
   const hiddenRef = useRef(hiddenGames);
   hiddenRef.current = hiddenGames;
   const refreshHiddenOut = useCallback(async (): Promise<string[]> => {
@@ -600,6 +624,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       freeRamOnBoost: boolean;
       folders: Folder[];
       hiddenGames: HiddenGame[];
+      homeHidden: HiddenGame[];
       addedGames: HiddenGame[];
     }>) => {
       if (Array.isArray(saved.profiles) && saved.profiles.length > 0) {
@@ -616,6 +641,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (typeof saved.freeRamOnBoost === 'boolean') setFreeRamOnBoost(saved.freeRamOnBoost);
       if (Array.isArray(saved.folders)) setFolders(saved.folders);
       if (Array.isArray(saved.hiddenGames)) setHiddenGames(saved.hiddenGames);
+      if (Array.isArray(saved.homeHidden)) setHomeHidden(saved.homeHidden);
       if (Array.isArray(saved.addedGames)) setAddedGames(saved.addedGames);
     };
     (async () => {
@@ -665,6 +691,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         freeRamOnBoost,
         folders,
         hiddenGames,
+        homeHidden,
         addedGames,
       }),
     ).catch(() => {});
@@ -677,6 +704,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     freeRamOnBoost,
     folders,
     hiddenGames,
+    homeHidden,
     addedGames,
   ]);
 
@@ -700,6 +728,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     forgetHidden,
     hiddenOut,
     refreshHiddenOut,
+    homeHidden,
+    markHomeHidden,
+    unmarkHomeHidden,
     addedGames,
     addGames,
     removeAddedGame,

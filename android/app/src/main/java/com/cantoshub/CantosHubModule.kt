@@ -119,6 +119,9 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
     private const val SHIZUKU_REQ = 4001
     private const val CRED_REQ = 4002
     private const val HOME_REQ = 4003
+    private const val SAMSUNG_HOME = "com.sec.android.app.launcher"
+    // Home apps with no Hide apps of their own: hiding there would mean switching apps off.
+    private val NO_HIDE_HOMES = setOf("com.google.android.apps.nexuslauncher", "com.android.launcher3")
   }
 
   // --- Permissions ---
@@ -467,16 +470,75 @@ class CantosHubModule(private val ctx: ReactApplicationContext) :
    */
   @ReactMethod
   fun openLauncherHideApps(promise: Promise) {
-    val samsung = Intent().setClassName(
-      "com.sec.android.app.launcher", "com.android.homescreen.settings.HomeScreenSettingsActivity",
-    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    try { ctx.startActivity(samsung); promise.resolve("samsung"); return } catch (e: Exception) {}
+    val home = homePackage()
+    // Samsung's settings page only helps when One UI Home is the Home app (not Nova on a Galaxy).
+    if (home == null || home == SAMSUNG_HOME) {
+      try { ctx.startActivity(samsungHomeSettings()); promise.resolve("samsung"); return } catch (e: Exception) {}
+    }
+    // Another Home app: its own settings (where Nova, Lawnchair, Niagara... keep Hide apps).
+    if (home != null) {
+      try {
+        ctx.startActivity(
+          Intent(Intent.ACTION_APPLICATION_PREFERENCES).setPackage(home).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        promise.resolve("home")
+        return
+      } catch (e: Exception) {}
+    }
     try {
       ctx.startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       promise.resolve("home")
     } catch (e: Exception) {
       promise.resolve("")
     }
+  }
+
+  /**
+   * Can the Home screen hide apps by itself? Apps hidden that way stay switched on, so their
+   * notifications, background sync and Play Store updates keep working - unlike CantosHub's own
+   * hide (pm disable-user), the only kind Android's shell allows, which stops all of that.
+   * kind: "samsung" (One UI Home: "Hide apps on Home and Apps screens"), "launcher" (another
+   * Home app; most have Hide apps in their settings), "none" (Pixel / stock Launcher3 can't).
+   */
+  @ReactMethod
+  fun homeHideInfo(promise: Promise) {
+    val pm = ctx.packageManager
+    val home = homePackage()
+    val samsungThere = try {
+      pm.resolveActivity(samsungHomeSettings(), 0) != null
+    } catch (e: Exception) {
+      false
+    }
+    val kind = when {
+      home == SAMSUNG_HOME && samsungThere -> "samsung"
+      home == null -> if (samsungThere) "samsung" else "none" // e.g. Kids Mode holds Home right now
+      home in NO_HIDE_HOMES -> "none"
+      else -> "launcher"
+    }
+    val label = try {
+      val pkg = if (kind == "samsung") SAMSUNG_HOME else home
+      if (pkg == null) "" else pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    } catch (e: Exception) {
+      ""
+    }
+    val m = Arguments.createMap()
+    m.putString("kind", kind)
+    m.putString("label", label)
+    promise.resolve(m)
+  }
+
+  private fun samsungHomeSettings(): Intent = Intent().setClassName(
+    SAMSUNG_HOME, "com.android.homescreen.settings.HomeScreenSettingsActivity",
+  ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+  /** The phone's real Home app (not CantosHub while Kids Mode holds Home); null if none is set. */
+  private fun homePackage(): String? = try {
+    val ri = ctx.packageManager.resolveActivity(
+      Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY,
+    )
+    ri?.activityInfo?.packageName?.takeIf { it != "android" && it != ctx.packageName }
+  } catch (e: Exception) {
+    null
   }
 
   /** A default Home app is saved (Home doesn't land on Android's "Select a Home app"). */

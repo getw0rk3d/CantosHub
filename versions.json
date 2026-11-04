@@ -1,6 +1,6 @@
 {
-  "versionCode": 24,
-  "versionName": "1.3.7",
-  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.7/CantosHub-1.3.7.apk",
-  "notes": "NEW: Hide Kids apps from your phone (all or some) while they stay on the kids screen (PRO). The Wireless debugging alert now pops up just once."
+  "versionCode": 25,
+  "versionName": "1.3.8",
+  "apkUrl": "https://github.com/getw0rk3d/CantosHub/releases/download/v1.3.8/CantosHub-1.3.8.apk",
+  "notes": "NEW: Hidden apps keep their notifications. Choose Keep notifications when hiding (your Home screen hides the icon, the app stays on), and Turn notifications on for apps CantosHub switched off."
 }
